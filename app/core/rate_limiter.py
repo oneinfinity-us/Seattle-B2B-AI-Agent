@@ -1,14 +1,17 @@
 """
-基于 Redis + Lua 的令牌桶限流器。
+A Redis + Lua based token-bucket rate limiter.
 
-为什么不用内存计数器 / 简单 INCR + EXPIRE：
-1. 多进程/多实例部署时，内存计数器各算各的，起不到全局限流作用。
-2. INCR+EXPIRE 在高并发下会有"临界突刺"问题（比如刚好在窗口边界瞬间打满两倍配额）。
-3. 令牌桶允许"突发流量 + 平滑补充"，更符合真实场景：
-   商户一次性收到 20 条新 Yelp 评论时，允许短时间内并发处理，但长期速率仍受控。
+Why not an in-memory counter / a simple INCR + EXPIRE:
+1. Across multi-process/multi-instance deployments, an in-memory counter counts independently on each
+   instance, so it can't enforce a global rate limit.
+2. INCR+EXPIRE has a "boundary burst" problem under high concurrency (e.g., landing right at a window
+   boundary can let through twice the intended quota).
+3. A token bucket allows "bursty traffic + smooth refill," which better matches the real scenario:
+   when a merchant receives 20 new Yelp reviews at once, it's fine to process them concurrently for a
+   short burst, but the long-term rate is still controlled.
 
-用 Lua 脚本是因为"读取剩余令牌 -> 判断 -> 扣减"必须是原子操作，
-否则并发请求之间会有 race condition（TOCTOU）。
+A Lua script is used because "read remaining tokens -> check -> deduct" must be an atomic operation,
+otherwise there would be a race condition (TOCTOU) between concurrent requests.
 """
 import time
 from dataclasses import dataclass
@@ -16,11 +19,11 @@ from dataclasses import dataclass
 from redis.asyncio import Redis
 
 _TOKEN_BUCKET_LUA = """
--- KEYS[1] = 桶的 redis key
--- ARGV[1] = capacity 容量
--- ARGV[2] = refill_rate 每秒补充多少令牌
--- ARGV[3] = now 当前时间戳（秒，float）
--- ARGV[4] = requested 本次请求消耗的令牌数
+-- KEYS[1] = the bucket's redis key
+-- ARGV[1] = capacity
+-- ARGV[2] = refill_rate, tokens refilled per second
+-- ARGV[3] = now, current timestamp (seconds, float)
+-- ARGV[4] = requested, tokens consumed by this request
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
@@ -36,7 +39,7 @@ if tokens == nil then
     last_ts = now
 end
 
--- 按经过的时间补充令牌，但不超过容量上限
+-- Refill tokens based on elapsed time, but not beyond the capacity cap
 local elapsed = math.max(0, now - last_ts)
 tokens = math.min(capacity, tokens + elapsed * refill_rate)
 
@@ -60,7 +63,7 @@ class RateLimitResult:
 
 
 class TenantRateLimiter:
-    """按 tenant_id（商户）粒度限流，避免一个商户的流量突刺打垮其他商户的额度。"""
+    """Rate-limits at tenant_id (merchant) granularity, so a traffic spike from one tenant doesn't exhaust another tenant's quota."""
 
     def __init__(self, redis: Redis, capacity: int, refill_per_sec: float):
         self._redis = redis

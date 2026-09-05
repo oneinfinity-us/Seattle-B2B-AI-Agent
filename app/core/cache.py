@@ -1,10 +1,11 @@
 """
-语义缓存：许多 Yelp 评论内容高度相似（"味道不错，服务慢"这种模式反复出现）。
-如果只做精确字符串匹配缓存，命中率很低；用 embedding 相似度匹配可以显著降低 LLM 调用次数。
+Semantic cache: many Yelp review contents are highly similar (patterns like "food's good, service is
+slow" recur over and over). An exact string-match cache alone would have a low hit rate; using embedding
+similarity matching can significantly reduce the number of LLM calls.
 
-生产环境建议把候选向量放 Qdrant/pgvector 做 ANN 检索；
-这里用 numpy 暴力计算余弦相似度，是为了骨架简单、无需额外基础设施即可跑通，
-并在注释里标出"生产环境该换成什么"。
+In production, candidate vectors should be stored in Qdrant/pgvector for ANN retrieval; here numpy
+brute-force cosine similarity is used to keep the skeleton simple and runnable without extra
+infrastructure, with a comment noting "what this should be swapped for in production."
 """
 from __future__ import annotations
 
@@ -50,4 +51,4 @@ class SemanticCache:
         index_key = f"semcache:index:{tenant_id}"
         payload = json.dumps({"embedding": embedding, "reply_draft": reply_draft})
         await self._redis.hset(index_key, review_id, payload)
-        await self._redis.expire(index_key, 60 * 60 * 24 * 7)  # 7 天过期，避免无限增长
+        await self._redis.expire(index_key, 60 * 60 * 24 * 7)  # 7-day expiry, to avoid unbounded growth

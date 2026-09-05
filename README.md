@@ -1,51 +1,51 @@
 # Yelp Review AI Agent — Core Service Skeleton
 
-面向西雅图本地 B2B 商户（餐厅 / 房产中介等）的 Yelp 评论自动分析 + 自动回复草稿 + 通知 Agent。
+A Yelp review auto-analysis + auto reply-draft + notification agent for Seattle-local B2B merchants (restaurants / real estate agencies, etc.).
 
-## 为什么这样选型
+## Why These Choices
 
-| 组件 | 选型 | 面试中要讲的点 |
+| Component | Choice | Talking points for interviews |
 |---|---|---|
-| Web 框架 | FastAPI (async) | 原生 async/await，天然适合 I/O bound 的 LLM 调用与并发通知 |
-| Agent 编排 | LangGraph 风格的显式状态机（本骨架用轻量自研版本演示原理，生产建议直接上 LangGraph） | 展示你理解"图状态机"而不是把 Agent 写成一坨 if-else |
-| 缓存 / 限流 | Redis + Lua 脚本（令牌桶） | 原子性、无锁、单实例吞吐可到几万 QPS，能讲清楚为什么不用应用层内存计数 |
-| 语义缓存 | Embedding + 余弦相似度去重 | 避免"重复/近似评论"重复调用大模型，直接省 token 成本 |
-| 流式响应 | SSE (Server-Sent Events) | 前端可以边生成边展示草稿，比 WebSocket 更轻量，单向场景足够 |
-| 通知 | 异步任务（arq worker，基于 Redis Queue） | 展示你知道"LLM 调用"和"发送通知"要解耦，不能塞在同一个请求里 |
-| 向量检索 | Qdrant（也可换 pgvector） | 商户历史评论 / 品牌语气知识库做 RAG，让回复贴近该商户的语气 |
-| 多租户隔离 | 每个商户一个 tenant_id，贯穿限流 key / 缓存 key / 向量 collection | 面试官最爱问的"如何做多租户隔离"提前给答案 |
+| Web framework | FastAPI (async) | Native async/await, a natural fit for I/O-bound LLM calls and concurrent notifications |
+| Agent orchestration | A LangGraph-style explicit state machine (this skeleton demonstrates the principle with a lightweight homegrown version; in production, go straight to LangGraph) | Shows you understand a "graph state machine" rather than writing the agent as a pile of if-else |
+| Cache / rate limiting | Redis + Lua scripts (token bucket) | Atomic, lock-free, can hit tens of thousands of QPS on a single instance — you can clearly explain why an in-app memory counter isn't used |
+| Semantic cache | Embedding + cosine-similarity deduplication | Avoids repeatedly calling the LLM for "duplicate/near-duplicate reviews," directly saving on token cost |
+| Streaming response | SSE (Server-Sent Events) | The frontend can display the draft as it's generated; lighter-weight than WebSocket, and sufficient for a one-way scenario |
+| Notifications | Async task (arq worker, backed by a Redis Queue) | Shows you know that "calling the LLM" and "sending a notification" must be decoupled, not crammed into the same request |
+| Vector search | Qdrant (pgvector is a fine swap) | RAG over a merchant's historical reviews / brand-voice knowledge base, so replies match that merchant's tone |
+| Multi-tenant isolation | One tenant_id per merchant, threaded through the rate-limit key / cache key / vector collection | Pre-answers the interviewer's favorite question, "how do you do multi-tenant isolation" |
 
-## 目录结构
+## Directory Structure
 
 ```
 app/
-  main.py                 # FastAPI 入口，生命周期管理（Redis/HTTP client 连接池）
+  main.py                 # FastAPI entry point, lifecycle management (Redis/HTTP client connection pools)
   core/
-    config.py             # 环境变量集中管理
-    rate_limiter.py        # Redis 令牌桶限流（Lua 原子操作）
-    cache.py               # 语义缓存（embedding 相似度）
-    llm_client.py           # LLM 调用封装：流式、重试、多供应商 fallback
+    config.py             # Centralized environment variable management
+    rate_limiter.py        # Redis token-bucket rate limiting (Lua atomic operations)
+    cache.py               # Semantic cache (embedding similarity)
+    llm_client.py           # LLM call wrapper: streaming, retries, multi-provider fallback
   agents/
-    review_agent.py         # 显式状态机：抓取->分类->生成->人工确认->通知
+    review_agent.py         # Explicit state machine: fetch -> classify -> generate -> human approval -> notify
   models/
-    schemas.py              # Pydantic 数据模型
+    schemas.py              # Pydantic data models
   services/
-    notifier.py             # 邮件/短信通知（异步、幂等）
+    notifier.py             # Email/SMS notifications (async, idempotent)
   api/
-    routes.py               # HTTP/SSE 路由
+    routes.py               # HTTP/SSE routes
 ```
 
-## 快速开始（本地）
+## Quickstart (Local)
 
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-需要本地起一个 Redis：`docker run -p 6379:6379 redis:7`
+Requires a local Redis instance: `docker run -p 6379:6379 redis:7`
 
-## 已知的设计取舍（面试时主动讲出来，见聊天正文第 5 部分）
+## Known Design Trade-offs (bring these up proactively in interviews — see part 5 of the chat transcript)
 
-1. Yelp Fusion API 官方不提供评论全文批量抓取（ToS 限制），生产环境需要走 Yelp Partner / 第三方评论聚合 API，或先做「商户手动同步」兜底。
-2. 所有"自动回复"默认走人工审核 Gate，不做全自动发布——这是产品/安全判断，不是技术限制。
-3. Agent 状态必须持久化到数据库（而不是进程内内存），否则一次 worker 重启就会丢失所有进行中的工作流。
+1. The official Yelp Fusion API does not provide bulk fetching of full review text (a ToS restriction); production would need to go through the Yelp Partner API / a third-party review aggregation API, or fall back to "manual merchant sync" first.
+2. All "auto-reply" defaults to a human-review gate — nothing is fully auto-published. This is a product/safety decision, not a technical limitation.
+3. Agent state must be persisted to a database (rather than kept in in-process memory), otherwise a single worker restart would lose all in-progress workflows.

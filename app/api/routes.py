@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 def _fake_embedding(text: str) -> list[float]:
-    # 骨架占位：生产环境换成真实的 embedding 模型调用（如 voyage / text-embedding-3）
+    # Skeleton placeholder: in production, swap in a real embedding model call (e.g. voyage / text-embedding-3)
     import hashlib
 
     h = hashlib.sha256(text.encode()).digest()
@@ -22,8 +22,10 @@ def _fake_embedding(text: str) -> list[float]:
 @router.post("/reviews/process")
 async def process_review(payload: ProcessReviewRequest, request: Request):
     """
-    SSE 流式返回处理过程：分类结果 -> 逐字生成的回复草稿 -> 最终状态。
-    前端可以直接用 EventSource 消费，边收边渲染，不需要等整个流程跑完。
+    Streams the processing pipeline back over SSE: classification result -> reply draft generated
+    token-by-token -> final state.
+    The frontend can consume it directly with EventSource, rendering as it receives data, without
+    waiting for the whole pipeline to finish.
     """
     app_state = request.app.state
     limiter_result = await app_state.rate_limiter.acquire(payload.tenant_id)
@@ -53,7 +55,7 @@ async def process_review(payload: ProcessReviewRequest, request: Request):
                     tenant_id=payload.tenant_id,
                     channel=NotifyChannel.EMAIL,
                     recipient="manager@example.com",
-                    subject=f"新评论待审核：{payload.review.review_id}",
+                    subject=f"New review awaiting approval: {payload.review.review_id}",
                     body=ctx.reply_draft,
                     idempotency_key=f"{payload.review.review_id}:email",
                 )
