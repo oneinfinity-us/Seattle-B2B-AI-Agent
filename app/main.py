@@ -10,6 +10,7 @@ from app.core.cache import SemanticCache
 from app.core.config import get_settings
 from app.core.llm_client import LLMClient
 from app.core.rate_limiter import TenantRateLimiter
+from app.db import Base, create_engine_and_sessionmaker
 from app.services.notifier import NotificationService
 
 
@@ -24,8 +25,16 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
+    db_engine, db_sessionmaker = create_engine_and_sessionmaker(settings.database_url)
+    async with db_engine.begin() as conn:
+        # MVP: create tables directly rather than via Alembic migrations; revisit once the schema
+        # needs to evolve without dropping data.
+        await conn.run_sync(Base.metadata.create_all)
+
     app.state.settings = settings
     app.state.redis = redis
+    app.state.db_engine = db_engine
+    app.state.db_sessionmaker = db_sessionmaker
     app.state.rate_limiter = TenantRateLimiter(
         redis, capacity=settings.rate_limit_capacity, refill_per_sec=settings.rate_limit_refill_per_sec
     )
@@ -36,6 +45,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await redis.aclose()
+    await db_engine.dispose()
 
 
 app = FastAPI(title="Yelp Review AI Agent", lifespan=lifespan)

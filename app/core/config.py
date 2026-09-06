@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # Redis: used for caching, the rate-limit token bucket, and the arq task queue
     redis_url: str = "redis://localhost:6379/0"
 
+    # Workflow persistence (tenants/reviews/approval decisions). Defaults to a local SQLite file so
+    # `uvicorn --reload` works with no extra infra; production should point this at Postgres, e.g.
+    # "postgresql+asyncpg://user:pass@host/db".
+    database_url: str = "sqlite+aiosqlite:///./dev.db"
+
     # Rate limiting: how many LLM calls each merchant (tenant) is allowed per minute
     rate_limit_capacity: int = 30
     rate_limit_refill_per_sec: float = 0.5

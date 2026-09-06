@@ -21,26 +21,18 @@ Why it's designed this way (interview talking points):
 """
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncGenerator
-from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.cache import SemanticCache
 from app.core.llm_client import LLMClient
-from app.models.schemas import ReviewInput, Sentiment
-
-
-class WorkflowState(StrEnum):
-    RECEIVED = "received"
-    CLASSIFIED = "classified"
-    DRAFTED = "drafted"
-    AWAITING_APPROVAL = "awaiting_approval"
-    APPROVED = "approved"
-    NOTIFIED = "notified"
+from app.models.schemas import ReviewInput, Sentiment, WorkflowState
 
 
 class WorkflowContext(BaseModel):
+    workflow_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     review: ReviewInput
     state: WorkflowState = WorkflowState.RECEIVED

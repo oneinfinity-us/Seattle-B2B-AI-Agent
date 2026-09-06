@@ -31,9 +31,20 @@ app/
     schemas.py              # Pydantic data models
   services/
     notifier.py             # Email/SMS notifications (async, idempotent)
+  db/
+    base.py                 # SQLAlchemy async engine/session setup
+    models.py                # ORM models (review_workflows)
+    repository.py            # WorkflowRepository: persistence + approve/edit/reject decisions
   api/
-    routes.py               # HTTP/SSE routes
+    routes.py               # HTTP/SSE routes, including the approval-decision endpoint
 ```
+
+## Human-Review Gate
+
+Every drafted reply is persisted in `AWAITING_APPROVAL` state (see `app/db/models.py`). A merchant closes
+it out via `POST /api/v1/reviews/{workflow_id}/decision` with `decision` set to `approved`, `edited`
+(requires `edited_reply`), or `rejected`. Nothing auto-publishes to Yelp/Google yet — that's the next
+integration once a decision lands as `approved`.
 
 ## Quickstart (Local)
 
