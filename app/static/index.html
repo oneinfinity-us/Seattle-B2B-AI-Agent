@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inbox Copilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F1F4F2; --surface: #FFFFFF; --surface-2: #E7ECE8; --border: #D7DED9;
+    --ink: #1B2420; --ink-muted: #5B6A62; --ink-faint: #8B978F;
+    --accent: #2F6F5E; --accent-strong: #1F4E42; --accent-soft: #DCEBE4; --accent-soft-border: #BBD9CC;
+    --pending-ink: #96660F; --pending-soft: #F6E9D3; --pending-border: #E4C688;
+    --sent: #2F5D8A; --sent-soft: #DCE8F2; --sent-border: #B7CFE3;
+    --reject: #9C4133; --reject-soft: #F3E1DD; --reject-border: #E2BEB6;
+    --shadow-sm: 0 1px 2px rgba(27,36,32,0.07); --shadow-md: 0 6px 20px rgba(27,36,32,0.08);
+    --font-display: 'Newsreader', Georgia, serif;
+    --font-body: 'Work Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121B16; --surface: #1A2620; --surface-2: #223028; --border: #33453B;
+      --ink: #E9EFEB; --ink-muted: #A7B9AE; --ink-faint: #75897E;
+      --accent: #7BC7AB; --accent-strong: #9BDABF; --accent-soft: #22392F; --accent-soft-border: #345040;
+      --pending-ink: #EFC77E; --pending-soft: #3A2E19; --pending-border: #5A461F;
+      --sent: #8FC0EE; --sent-soft: #1E2C3A; --sent-border: #34506D;
+      --reject: #E39284; --reject-soft: #3B241F; --reject-border: #5C382F;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.35); --shadow-md: 0 10px 26px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121B16; --surface: #1A2620; --surface-2: #223028; --border: #33453B;
+    --ink: #E9EFEB; --ink-muted: #A7B9AE; --ink-faint: #75897E;
+    --accent: #7BC7AB; --accent-strong: #9BDABF; --accent-soft: #22392F; --accent-soft-border: #345040;
+    --pending-ink: #EFC77E; --pending-soft: #3A2E19; --pending-border: #5A461F;
+    --sent: #8FC0EE; --sent-soft: #1E2C3A; --sent-border: #34506D;
+    --reject: #E39284; --reject-soft: #3B241F; --reject-border: #5C382F;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.35); --shadow-md: 0 10px 26px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14.5px; line-height: 1.5;
+  }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; }
+  button, input, textarea, select, a.btn { font-family: inherit; font-size: inherit; color: inherit; }
+  a { color: var(--accent-strong); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* ---------- logged-out view ---------- */
+  .landing {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .landing-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-md);
+    padding: 40px 36px; max-width: 380px; width: 100%; text-align: center;
+  }
+  .landing-mark {
+    width: 48px; height: 48px; border-radius: 12px; background: var(--accent-soft); border: 1px solid var(--accent-soft-border);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+  .landing-mark svg { width: 24px; height: 24px; stroke: var(--accent-strong); }
+  .landing-card h1 { font-size: 24px; margin-bottom: 8px; }
+  .landing-card p { color: var(--ink-muted); font-size: 13.5px; margin: 0 0 26px; }
+  .google-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+    background: var(--accent); color: #fff; border-radius: 10px; padding: 12px 18px; font-weight: 600;
+    font-size: 14px; text-decoration: none; box-shadow: var(--shadow-sm); transition: background .15s;
+  }
+  .google-btn:hover { background: var(--accent-strong); }
+  .landing-note { margin-top: 16px; font-size: 11.5px; color: var(--ink-faint); }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 18px 28px; border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); border: 1px solid var(--accent-soft-border);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .brand-mark svg { width: 18px; height: 18px; stroke: var(--accent-strong); }
+  .brand-text h1 { font-size: 19px; }
+  .brand-text .sub { font-size: 12px; color: var(--ink-muted); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .whoami { font-size: 12.5px; color: var(--ink-muted); text-align: right; }
+  .whoami b { color: var(--ink); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; border-radius: 9px; border: 1px solid transparent;
+    padding: 9px 16px; font-weight: 600; font-size: 13.5px; cursor: pointer; white-space: nowrap;
+    transition: transform .1s ease, box-shadow .15s ease, background .15s ease, opacity .15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
+  .btn-primary:hover { background: var(--accent-strong); }
+  .btn-primary:disabled { opacity: .55; cursor: default; transform: none; }
+  .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--ink); }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .btn-danger-outline { background: transparent; border-color: var(--reject-border); color: var(--reject); }
+  .btn-danger-outline:hover { background: var(--reject-soft); }
+  .btn-sm { padding: 6px 11px; font-size: 12.5px; border-radius: 7px; }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.4s; } }
+
+  /* ---------- layout ---------- */
+  .console { max-width: 1180px; margin: 0 auto; padding: 22px 28px 60px; }
+  .sync-status {
+    font-size: 12.5px; color: var(--ink-muted); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 9px; padding: 8px 12px; margin-bottom: 16px;
+  }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-sm); }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); font-weight: 600; }
+  .stat-value { font-family: var(--font-mono); font-size: 26px; font-weight: 500; margin-top: 4px; }
+  .stat-value.accent-num { color: var(--pending-ink); }
+  .stat-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+
+  .workspace { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .workspace { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } }
+
+  .queue-col h2 { font-size: 14px; font-weight: 600; font-family: var(--font-body); color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .queue-note { font-size: 12px; color: var(--ink-faint); margin-bottom: 10px; }
+  .queue-list { list-style: none; margin: 0 0 26px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid transparent; border-radius: 11px;
+    padding: 12px 13px; cursor: pointer; box-shadow: var(--shadow-sm); transition: box-shadow .15s, border-color .15s;
+  }
+  .card:hover { box-shadow: var(--shadow-md); }
+  .card.selected { border-left-color: var(--accent); background: var(--accent-soft); }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 5px; }
+  .card-sender { font-weight: 600; font-size: 13.5px; }
+  .card-time { font-size: 11px; color: var(--ink-faint); font-family: var(--font-mono); white-space: nowrap; }
+  .card-subject { font-size: 13px; color: var(--ink); margin-bottom: 3px; }
+  .card-preview { font-size: 12px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600;
+    padding: 2px 8px; border-radius: 100px; border: 1px solid; text-transform: uppercase; letter-spacing: .03em;
+  }
+  .chip-reply { color: var(--accent-strong); border-color: var(--accent-soft-border); background: var(--accent-soft); }
+  .chip-schedule { color: var(--sent); border-color: var(--sent-border); background: var(--sent-soft); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 100px; border: 1px solid; }
+  .pill-pending { color: var(--pending-ink); background: var(--pending-soft); border-color: var(--pending-border); }
+  .pill-sent { color: var(--sent); background: var(--sent-soft); border-color: var(--sent-border); }
+  .pill-rejected, .pill-failed { color: var(--reject); background: var(--reject-soft); border-color: var(--reject-border); }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .history-row {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px;
+    background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; cursor: pointer;
+  }
+  .history-row:hover { background: var(--surface-2); }
+  .history-row .h-sender { font-weight: 600; flex-shrink: 0; }
+  .history-row .h-subject { color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .history-row .h-time { color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+  .empty-note { font-size: 12.5px; color: var(--ink-faint); padding: 4px 2px 18px; }
+
+  /* ---------- detail panel ---------- */
+  .detail { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; box-shadow: var(--shadow-sm); min-height: 420px; }
+  .detail-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; min-height: 380px; color: var(--ink-muted); }
+  .detail-empty svg { width: 34px; height: 34px; stroke: var(--ink-faint); }
+  .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .detail-meta-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .detail-subject { font-size: 20px; margin-bottom: 3px; }
+  .detail-from { font-size: 13px; color: var(--ink-muted); }
+  .detail-from b { color: var(--ink); font-weight: 600; }
+  .detail-time { font-size: 12px; color: var(--ink-faint); font-family: var(--font-mono); white-space: nowrap; }
+  .schedule-note {
+    background: var(--sent-soft); border: 1px solid var(--sent-border); color: var(--sent); border-radius: 9px;
+    padding: 9px 12px; font-size: 12.5px; margin-bottom: 16px;
+  }
+  .draft-block { margin-top: 4px; }
+  .draft-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+  .draft-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); font-weight: 600; }
+  .edited-flag { font-size: 11px; color: var(--pending-ink); font-weight: 600; opacity: 0; transition: opacity .15s; }
+  .edited-flag.show { opacity: 1; }
+  .draft-textarea {
+    width: 100%; min-height: 170px; resize: vertical; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 13px; background: var(--surface); color: var(--ink); line-height: 1.55; font-size: 13.5px;
+  }
+  .draft-textarea:disabled { color: var(--ink-muted); background: var(--surface-2); }
+  .action-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .reject-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .reject-row input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; background: var(--surface); }
+  .decided-note { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 13px; border-radius: 9px; font-size: 13px; }
+  .decided-note.sent { background: var(--sent-soft); color: var(--sent); border: 1px solid var(--sent-border); }
+  .decided-note.rejected, .decided-note.failed { background: var(--reject-soft); color: var(--reject); border: 1px solid var(--reject-border); }
+</style>
+</head>
+<body>
+
+<div class="landing" id="landing">
+  <div class="landing-card">
+    <div class="landing-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H7l-3 3V5z"/><path d="M8 9h8M8 12h5"/></svg>
+    </div>
+    <h1>Inbox Copilot</h1>
+    <p>Sign in with the Google account you want the assistant to triage — this both logs you in and grants Gmail + Calendar access.</p>
+    <a class="google-btn" href="/api/v1/auth/google/login">
+      <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.17-1.81-.17-1.81z"/></svg>
+      Continue with Google
+    </a>
+    <div class="landing-note">Requires GOOGLE_OAUTH_CLIENT_ID/SECRET to be configured on the server.</div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H7l-3 3V5z"/><path d="M8 9h8M8 12h5"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Inbox Copilot</h1>
+        <div class="sub" id="business-name"></div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="whoami">Connected as<br><b id="connected-email"></b></div>
+      <button class="btn btn-primary" id="sync-btn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><path d="M21 4v6h-6"/></svg>
+        <span id="sync-btn-label">Check inbox now</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="logout-btn" type="button">Log out</button>
+    </div>
+  </div>
+
+  <div class="console">
+    <div class="sync-status" id="sync-status" hidden></div>
+    <div class="stats" id="stats"></div>
+
+    <div class="workspace">
+      <div class="queue-col">
+        <h2>Needs your review</h2>
+        <ul class="queue-list" id="queue-list"></ul>
+        <div class="empty-note" id="queue-empty" hidden>No drafts waiting on you right now.</div>
+
+        <h2>Recently handled</h2>
+        <ul class="history-list" id="history-list"></ul>
+        <div class="empty-note" id="history-empty" hidden>Nothing handled yet.</div>
+      </div>
+
+      <div class="detail" id="detail"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = { tenantId: null, businessName: "", connectedEmail: "", actions: [], selectedId: null };
+
+  function timeAgo(iso) {
+    var s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return "just now";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.round(m / 60);
+    if (h < 24) return h + "h ago";
+    return Math.round(h / 24) + "d ago";
+  }
+
+  function kindChip(kind) {
+    return kind === "scheduling_proposal"
+      ? '<span class="chip chip-schedule">Scheduling</span>'
+      : '<span class="chip chip-reply">Email reply</span>';
+  }
+  function statusPill(a) {
+    if (a.state === "sent") return '<span class="pill pill-sent"><span class="pill-dot"></span>Sent</span>';
+    if (a.state === "rejected") return '<span class="pill pill-rejected"><span class="pill-dot"></span>Rejected</span>';
+    if (a.state === "failed") return '<span class="pill pill-failed"><span class="pill-dot"></span>Send failed</span>';
+    return '<span class="pill pill-pending"><span class="pill-dot"></span>Needs review</span>';
+  }
+  function senderName(a) {
+    // reply_to is a raw "From" header (e.g. `Jane Doe <jane@example.com>`); show just the name/address.
+    var match = /^([^<]+)</.exec(a.reply_to || "");
+    return (match ? match[1] : (a.reply_to || "Unknown sender")).trim();
+  }
+  function escapeHtml(s) {
+    var div = document.createElement("div");
+    div.textContent = s || "";
+    return div.innerHTML;
+  }
+
+  // ---------- boot ----------
+  async function boot() {
+    var res = await fetch("/api/v1/auth/me", { credentials: "include" });
+    if (!res.ok) {
+      document.getElementById("landing").hidden = false;
+      document.getElementById("app").hidden = true;
+      return;
+    }
+    var me = await res.json();
+    state.tenantId = me.tenant_id;
+    state.businessName = me.business_name;
+    state.connectedEmail = me.connected_email;
+
+    document.getElementById("landing").hidden = true;
+    document.getElementById("app").hidden = false;
+    document.getElementById("business-name").textContent = me.business_name;
+    document.getElementById("connected-email").textContent = me.connected_email;
+
+    await fetchActions();
+  }
+
+  async function fetchActions() {
+    var res = await fetch("/api/v1/assistant", { credentials: "include" });
+    if (res.status === 401) { boot(); return; }
+    state.actions = await res.json();
+    if (!state.selectedId) {
+      var firstPending = state.actions.filter(function (a) { return a.state === "awaiting_approval"; })[0];
+      state.selectedId = firstPending ? firstPending.id : null;
+    }
+    render();
+  }
+
+  function findAction(id) { return state.actions.filter(function (a) { return a.id === id; })[0]; }
+
+  function render() { renderStats(); renderQueue(); renderHistory(); renderDetail(); }
+
+  function renderStats() {
+    var pending = state.actions.filter(function (a) { return a.state === "awaiting_approval"; }).length;
+    var sent = state.actions.filter(function (a) { return a.state === "sent"; }).length;
+    var rejected = state.actions.filter(function (a) { return a.state === "rejected" || a.state === "failed"; }).length;
+    document.getElementById("stats").innerHTML =
+      stat("Needs review", pending, pending > 0 ? "accent-num" : "", "awaiting your decision") +
+      stat("Sent", sent, "", "auto-sent after approval") +
+      stat("Rejected / failed", rejected, "", "handled outside the assistant, or send errors");
+  }
+  function stat(label, value, cls, sub) {
+    return '<div class="stat"><div class="stat-label">' + label + '</div><div class="stat-value ' + cls + '">' + value + '</div><div class="stat-sub">' + sub + '</div></div>';
+  }
+
+  function renderQueue() {
+    var list = state.actions.filter(function (a) { return a.state === "awaiting_approval"; });
+    var ul = document.getElementById("queue-list");
+    ul.innerHTML = "";
+    list.forEach(function (a) {
+      var li = document.createElement("li");
+      li.className = "card" + (a.id === state.selectedId ? " selected" : "");
+      li.innerHTML =
+        '<div class="card-top">' + kindChip(a.kind) + '<span class="card-time">' + timeAgo(a.created_at) + '</span></div>' +
+        '<div class="card-sender">' + escapeHtml(senderName(a)) + '</div>' +
+        '<div class="card-subject">' + escapeHtml(a.summary) + '</div>' +
+        '<div class="card-preview">' + escapeHtml((a.draft_content || "").split("\n")[0]) + '</div>';
+      li.addEventListener("click", function () { state.selectedId = a.id; render(); });
+      ul.appendChild(li);
+    });
+    document.getElementById("queue-empty").hidden = list.length !== 0;
+  }
+
+  function renderHistory() {
+    var list = state.actions.filter(function (a) { return a.state === "sent" || a.state === "rejected" || a.state === "failed"; });
+    var ul = document.getElementById("history-list");
+    ul.innerHTML = "";
+    list.forEach(function (a) {
+      var li = document.createElement("li");
+      li.className = "history-row";
+      li.innerHTML =
+        statusPill(a) +
+        '<span class="h-sender">' + escapeHtml(senderName(a)) + '</span>' +
+        '<span class="h-subject">' + escapeHtml(a.summary) + '</span>' +
+        '<span class="h-time">' + timeAgo(a.decided_at || a.updated_at) + '</span>';
+      li.addEventListener("click", function () { state.selectedId = a.id; render(); });
+      ul.appendChild(li);
+    });
+    document.getElementById("history-empty").hidden = list.length !== 0;
+  }
+
+  function renderDetail() {
+    var el = document.getElementById("detail");
+    var a = state.selectedId ? findAction(state.selectedId) : null;
+    if (!a) {
+      el.innerHTML =
+        '<div class="detail-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H7l-3 3V5z"/><path d="M8 9h8M8 12h5"/></svg>' +
+        '<div><b>All caught up</b><br>Select an item from the queue, or check the inbox for new mail.</div></div>';
+      return;
+    }
+
+    var scheduleNote = a.kind === "scheduling_proposal"
+      ? '<div class="schedule-note">This draft already accounts for calendar availability — review the proposed times before sending.</div>'
+      : "";
+
+    var decidedHtml = "";
+    if (a.state === "sent") {
+      decidedHtml = '<div class="decided-note sent">✓ Sent to ' + escapeHtml(a.reply_to) + ' · approved by ' + escapeHtml(a.decided_by || "") + ', ' + timeAgo(a.decided_at) + '</div>';
+    } else if (a.state === "rejected") {
+      decidedHtml = '<div class="decided-note rejected">✕ Rejected by ' + escapeHtml(a.decided_by || "") + ', ' + timeAgo(a.decided_at) + (a.reject_reason ? ' — "' + escapeHtml(a.reject_reason) + '"' : '') + '</div>';
+    } else if (a.state === "failed") {
+      decidedHtml = '<div class="decided-note failed">⚠ Approved, but sending failed: ' + escapeHtml(a.error_message || "unknown error") + '</div>';
+    }
+
+    var readOnly = a.state !== "awaiting_approval";
+    var textValue = a.final_content || a.draft_content;
+
+    el.innerHTML =
+      '<div class="detail-head">' +
+        '<div>' +
+          '<div class="detail-meta-line">' + kindChip(a.kind) + statusPill(a) + '</div>' +
+          '<h3 class="detail-subject">' + escapeHtml(a.summary) + '</h3>' +
+          '<div class="detail-from">Reply goes to <b>' + escapeHtml(a.reply_to) + '</b></div>' +
+        '</div>' +
+        '<div class="detail-time">' + timeAgo(a.created_at) + '</div>' +
+      '</div>' +
+      scheduleNote +
+      '<div class="draft-block">' +
+        '<div class="draft-label-row"><span class="draft-label">AI-drafted reply</span><span class="edited-flag" id="edited-flag">Edited</span></div>' +
+        '<textarea class="draft-textarea" id="draft-textarea" ' + (readOnly ? "disabled" : "") + '>' + escapeHtml(textValue) + '</textarea>' +
+      '</div>' +
+      (a.state === "awaiting_approval" ? actionRowHtml() : "") +
+      decidedHtml;
+
+    if (a.state === "awaiting_approval") {
+      var ta = document.getElementById("draft-textarea");
+      ta.addEventListener("input", function () {
+        document.getElementById("edited-flag").classList.toggle("show", ta.value !== a.draft_content);
+        document.getElementById("approve-btn-label").textContent = ta.value !== a.draft_content ? "Send edited reply" : "Approve & send";
+      });
+      document.getElementById("approve-btn").addEventListener("click", function () {
+        submitDecision(a.id, ta.value !== a.draft_content ? "edited" : "approved", ta.value !== a.draft_content ? ta.value : null);
+      });
+      document.getElementById("reject-btn").addEventListener("click", function () {
+        var row = document.getElementById("reject-row");
+        row.style.display = row.style.display === "flex" ? "none" : "flex";
+        document.getElementById("reject-reason").focus();
+      });
+      document.getElementById("reject-confirm").addEventListener("click", function () {
+        submitDecision(a.id, "rejected", null, document.getElementById("reject-reason").value.trim());
+      });
+    }
+  }
+
+  function actionRowHtml() {
+    return (
+      '<div class="action-row">' +
+        '<button class="btn btn-primary" id="approve-btn" type="button">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' +
+          '<span id="approve-btn-label">Approve &amp; send</span>' +
+        '</button>' +
+        '<button class="btn btn-danger-outline" id="reject-btn" type="button">Reject</button>' +
+      '</div>' +
+      '<div class="reject-row" id="reject-row" style="display:none">' +
+        '<input type="text" id="reject-reason" placeholder="Optional note to yourself">' +
+        '<button class="btn btn-ghost btn-sm" id="reject-confirm" type="button">Confirm reject</button>' +
+      '</div>'
+    );
+  }
+
+  async function submitDecision(actionId, decision, editedReply, rejectReason) {
+    await fetch("/api/v1/assistant/" + actionId + "/decision", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision: decision,
+        decided_by: state.connectedEmail,
+        edited_reply: editedReply || null,
+        reject_reason: rejectReason || null
+      })
+    });
+    await fetchActions();
+  }
+
+  // ---------- check inbox now (consumes the POST SSE stream by hand — EventSource is GET-only) ----------
+  async function runSync() {
+    var btn = document.getElementById("sync-btn");
+    var label = document.getElementById("sync-btn-label");
+    var status = document.getElementById("sync-status");
+    btn.disabled = true;
+    status.hidden = false;
+    status.textContent = "Checking Gmail & Calendar…";
+    label.innerHTML = '<span class="spinner"></span> Checking…';
+
+    try {
+      var resp = await fetch("/api/v1/assistant/sync", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_notify_manager: true })
+      });
+      if (resp.status === 401) { boot(); return; }
+      if (!resp.body) throw new Error("streaming not supported");
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      var drafts = {};
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var idx;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          handleSseEvent(buffer.slice(0, idx), drafts, status);
+          buffer = buffer.slice(idx + 2);
+        }
+      }
+    } catch (err) {
+      status.textContent = "Couldn't reach the assistant — try again.";
+    } finally {
+      btn.disabled = false;
+      label.textContent = "Check inbox now";
+      await fetchActions();
+      setTimeout(function () { status.hidden = true; }, 4000);
+    }
+  }
+
+  function handleSseEvent(raw, drafts, status) {
+    var eventType = "message", dataLine = "";
+    raw.split("\n").forEach(function (line) {
+      if (line.indexOf("event:") === 0) eventType = line.slice(6).trim();
+      else if (line.indexOf("data:") === 0) dataLine = line.slice(5).trim();
+    });
+    if (!dataLine) return;
+    var data = JSON.parse(dataLine);
+    if (eventType === "delta") {
+      if (data.delta) {
+        drafts[data.action_id] = (drafts[data.action_id] || "") + data.delta;
+        status.textContent = "Drafting… " + drafts[data.action_id].slice(-160);
+      } else {
+        status.textContent = "Classifying the next message…";
+      }
+    } else if (eventType === "done") {
+      status.textContent = data.actions_created
+        ? data.actions_created + " new item(s) added to your queue."
+        : "Done — nothing new needed your review.";
+    }
+  }
+
+  document.getElementById("sync-btn").addEventListener("click", runSync);
+  document.getElementById("logout-btn").addEventListener("click", async function () {
+    await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+    window.location.reload();
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

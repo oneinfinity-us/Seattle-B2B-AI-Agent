@@ -68,12 +68,23 @@ class PendingActionRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_all(self, tenant_id: str, limit: int = 50) -> list[PendingActionRecord]:
+        stmt = (
+            select(PendingActionRecord)
+            .where(PendingActionRecord.tenant_id == tenant_id)
+            .order_by(PendingActionRecord.updated_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def record_decision(
         self,
         action_id: str,
         decision: DecisionType,
         decided_by: str,
         edited_reply: str | None = None,
+        reject_reason: str | None = None,
     ) -> PendingActionRecord:
         record = await self._get(action_id)
         if record.state != ActionState.AWAITING_APPROVAL:
@@ -86,6 +97,7 @@ class PendingActionRepository:
         if decision == DecisionType.REJECTED:
             record.state = ActionState.REJECTED
             record.final_content = None
+            record.reject_reason = reject_reason
             await self._session.commit()
             await self._session.refresh(record)
             return record

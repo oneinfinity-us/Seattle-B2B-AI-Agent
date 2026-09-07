@@ -102,6 +102,14 @@ async def sync_inbox(payload: SyncRequest, request: Request, tenant_id: str = De
     return EventSourceResponse(event_generator())
 
 
+@router.get("/assistant", response_model=list[PendingActionResponse])
+async def list_actions(request: Request, tenant_id: str = Depends(require_tenant)):
+    """All of this tenant's actions (pending and already-decided), newest first — the frontend splits
+    this into the pending queue and the "recently handled" history client-side."""
+    async with repository_session(request.app.state.db_sessionmaker) as repo:
+        return await repo.list_all(tenant_id)
+
+
 @router.get("/assistant/pending", response_model=list[PendingActionResponse])
 async def list_pending_actions(request: Request, tenant_id: str = Depends(require_tenant)):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
@@ -145,6 +153,7 @@ async def submit_action_decision(
                 decision=payload.decision,
                 decided_by=payload.decided_by,
                 edited_reply=payload.edited_reply,
+                reject_reason=payload.reject_reason,
             )
         except InvalidDecisionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None

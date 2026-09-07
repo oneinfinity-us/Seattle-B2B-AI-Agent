@@ -10,7 +10,7 @@ from app.api.routes import router
 from app.core.sessions import require_tenant
 from app.db.repository import repository_session
 from app.integrations.email_provider import FakeEmailProvider
-from app.models.schemas import ActionKind, ActionState
+from app.models.schemas import ActionKind, ActionState, DecisionType
 
 
 @pytest_asyncio.fixture
@@ -80,6 +80,30 @@ async def test_list_pending_filters_by_tenant(client, db_sessionmaker):
     assert [record["id"] for record in response.json()] == [tenant_1_id]
 
 
+async def test_list_all_actions_returns_pending_and_history_for_tenant(client, db_sessionmaker):
+    pending_id = await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-1")
+    async with repository_session(db_sessionmaker) as repo:
+        sent_id = (
+            await repo.create(
+                action_id="sent-1",
+                tenant_id="tenant-1",
+                kind=ActionKind.EMAIL_REPLY,
+                source_message_id="thread-2",
+                reply_to="other@example.com",
+                summary="Already handled",
+            )
+        ).id
+        await repo.update_state(sent_id, state=ActionState.AWAITING_APPROVAL, draft_content="draft")
+        await repo.record_decision(action_id=sent_id, decision=DecisionType.APPROVED, decided_by="owner@example.com")
+    await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
+
+    response = await client.get("/api/v1/assistant")
+
+    assert response.status_code == 200
+    ids = {record["id"] for record in response.json()}
+    assert ids == {pending_id, sent_id}
+
+
 async def test_get_action_owned_by_another_tenant_returns_404(client, db_sessionmaker):
     other_tenant_action_id = await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
 
@@ -143,13 +167,14 @@ async def test_rejected_decision_does_not_send(client, db_sessionmaker, email_pr
 
     response = await client.post(
         f"/api/v1/assistant/{action_id}/decision",
-        json={"decision": "rejected", "decided_by": "owner@example.com"},
+        json={"decision": "rejected", "decided_by": "owner@example.com", "reject_reason": "I'll call them directly."},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["state"] == "rejected"
     assert body["final_content"] is None
+    assert body["reject_reason"] == "I'll call them directly."
     assert email_provider.sent == []
 
 

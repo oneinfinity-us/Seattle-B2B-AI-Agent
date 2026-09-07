@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
 from app.api.auth_routes import router as auth_router
@@ -47,9 +48,10 @@ async def lifespan(app: FastAPI):
     app.state.sessions = SessionStore(redis, settings.session_ttl_seconds)
     app.state.oauth_exchange = google_oauth.exchange_code
 
-    # Until Phase B's OAuth connect flow exists, every tenant shares a single in-memory fake
-    # provider. Swap this for a per-tenant GmailProvider/GoogleCalendarProvider lookup (built from
-    # that tenant's GmailAccountCredential row) once real credentials exist.
+    # Login now provisions a real GmailAccountCredential per tenant (app/api/auth_routes.py), but the
+    # email/calendar actions used by the sync/draft pipeline still share one in-memory fake provider.
+    # Swap this for a per-tenant GmailProvider/GoogleCalendarProvider lookup (built from that tenant's
+    # credential row) to make the assistant act on the real connected inbox.
     app.state.email_provider = FakeEmailProvider()
     app.state.calendar_provider = FakeCalendarProvider()
 
@@ -67,3 +69,8 @@ app.include_router(router, prefix="/api/v1")
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.get("/")
+async def index():
+    return FileResponse("app/static/index.html")

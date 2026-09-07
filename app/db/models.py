@@ -48,6 +48,7 @@ class PendingActionRecord(Base):
     decision: Mapped[DecisionType | None] = mapped_column(_enum_column(DecisionType), nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(256), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

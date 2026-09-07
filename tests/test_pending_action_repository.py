@@ -55,6 +55,21 @@ async def test_get_missing_action_raises(db_sessionmaker):
             await repo.get("does-not-exist")
 
 
+async def test_list_all_returns_every_state_for_tenant_newest_first(db_sessionmaker):
+    async with repository_session(db_sessionmaker) as repo:
+        received_id = await _create_action(repo, tenant_id="tenant-1")
+
+        awaiting_id = await _create_action(repo, tenant_id="tenant-1")
+        await repo.update_state(awaiting_id, state=ActionState.AWAITING_APPROVAL, draft_content="draft")
+
+        await _create_action(repo, tenant_id="tenant-2")  # a different tenant, must not appear
+
+        results = await repo.list_all("tenant-1")
+
+    assert {r.id for r in results} == {received_id, awaiting_id}
+    assert all(r.tenant_id == "tenant-1" for r in results)
+
+
 async def test_list_pending_only_returns_awaiting_approval_for_tenant(db_sessionmaker):
     async with repository_session(db_sessionmaker) as repo:
         pending_id = await _create_action(repo, tenant_id="tenant-1")
@@ -117,10 +132,16 @@ async def test_record_decision_rejected_does_not_send_and_clears_final_content(d
         action_id = await _create_action(repo)
         await repo.update_state(action_id, state=ActionState.AWAITING_APPROVAL, draft_content="Original draft.")
 
-        record = await repo.record_decision(action_id=action_id, decision=DecisionType.REJECTED, decided_by="owner@example.com")
+        record = await repo.record_decision(
+            action_id=action_id,
+            decision=DecisionType.REJECTED,
+            decided_by="owner@example.com",
+            reject_reason="I'll call them directly.",
+        )
 
     assert record.state == ActionState.REJECTED
     assert record.final_content is None
+    assert record.reject_reason == "I'll call them directly."
     assert provider.sent == []
 
 

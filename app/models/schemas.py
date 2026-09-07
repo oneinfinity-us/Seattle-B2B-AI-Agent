@@ -47,6 +47,7 @@ class ActionDecisionRequest(BaseModel):
     decision: DecisionType
     decided_by: str
     edited_reply: str | None = None
+    reject_reason: str | None = None
 
     @model_validator(mode="after")
     def _edited_reply_required_when_editing(self) -> "ActionDecisionRequest":
@@ -70,6 +71,7 @@ class PendingActionResponse(BaseModel):
     decision: DecisionType | None
     decided_by: str | None
     decided_at: datetime | None
+    reject_reason: str | None
     error_message: str | None
     created_at: datetime
     updated_at: datetime
