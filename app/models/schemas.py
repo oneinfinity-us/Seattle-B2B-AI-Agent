@@ -38,7 +38,6 @@ class EmailMessage(BaseModel):
 
 
 class SyncRequest(BaseModel):
-    tenant_id: str
     auto_notify_manager: bool = True
 
 

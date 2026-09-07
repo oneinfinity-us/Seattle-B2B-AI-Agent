@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api.routes import router
+from app.core.sessions import require_tenant
 from app.db.repository import repository_session
 from app.integrations.email_provider import FakeEmailProvider
 from app.models.schemas import ActionKind, ActionState
@@ -21,10 +22,12 @@ async def email_provider():
 async def client(db_sessionmaker, email_provider):
     # These endpoints only touch app.state.db_sessionmaker/email_provider, so we don't need the full
     # lifespan (Redis, LLM client, calendar provider, etc.) that app/main.py wires up for /assistant/sync.
+    # require_tenant is overridden instead of going through a real session cookie + Redis.
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.state.db_sessionmaker = db_sessionmaker
     app.state.email_provider = email_provider
+    app.dependency_overrides[require_tenant] = lambda: "tenant-1"
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -69,10 +72,31 @@ async def test_list_pending_filters_by_tenant(client, db_sessionmaker):
     tenant_1_id = await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-1")
     await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
 
-    response = await client.get("/api/v1/assistant/pending", params={"tenant_id": "tenant-1"})
+    # The client fixture's session resolves to "tenant-1" (see require_tenant override) — no tenant_id
+    # is or can be supplied by the caller.
+    response = await client.get("/api/v1/assistant/pending")
 
     assert response.status_code == 200
     assert [record["id"] for record in response.json()] == [tenant_1_id]
+
+
+async def test_get_action_owned_by_another_tenant_returns_404(client, db_sessionmaker):
+    other_tenant_action_id = await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
+
+    response = await client.get(f"/api/v1/assistant/{other_tenant_action_id}")
+
+    assert response.status_code == 404
+
+
+async def test_decision_on_another_tenants_action_returns_404(client, db_sessionmaker):
+    other_tenant_action_id = await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
+
+    response = await client.post(
+        f"/api/v1/assistant/{other_tenant_action_id}/decision",
+        json={"decision": "approved", "decided_by": "owner@example.com"},
+    )
+
+    assert response.status_code == 404
 
 
 async def test_approve_decision_sends_reply_and_marks_sent(client, db_sessionmaker, email_provider):

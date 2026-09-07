@@ -5,11 +5,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.api.auth_routes import router as auth_router
 from app.api.routes import router
 from app.core.config import get_settings
 from app.core.llm_client import LLMClient
 from app.core.rate_limiter import TenantRateLimiter
+from app.core.sessions import SessionStore
 from app.db import Base, create_engine_and_sessionmaker
+from app.integrations import google_oauth
 from app.integrations.calendar_provider import FakeCalendarProvider
 from app.integrations.email_provider import FakeEmailProvider
 from app.services.notifier import NotificationService
@@ -41,6 +44,8 @@ async def lifespan(app: FastAPI):
     )
     app.state.llm_client = LLMClient(settings)
     app.state.notifier = NotificationService(redis)
+    app.state.sessions = SessionStore(redis, settings.session_ttl_seconds)
+    app.state.oauth_exchange = google_oauth.exchange_code
 
     # Until Phase B's OAuth connect flow exists, every tenant shares a single in-memory fake
     # provider. Swap this for a per-tenant GmailProvider/GoogleCalendarProvider lookup (built from
@@ -55,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Seattle B2B AI Assistant", lifespan=lifespan)
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
 
 

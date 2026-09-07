@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from app.agents.assistant_agent import ActionContext, AssistantWorkflow
+from app.core.sessions import require_tenant
 from app.db.repository import ActionNotFoundError, InvalidDecisionError, repository_session
 from app.models.schemas import (
     ActionDecisionRequest,
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/assistant/sync")
-async def sync_inbox(payload: SyncRequest, request: Request):
+async def sync_inbox(payload: SyncRequest, request: Request, tenant_id: str = Depends(require_tenant)):
     """
     Fetches messages received in the last 24h, runs each through the triage/draft agent, and persists
     anything that needs a human decision. Streams progress over SSE.
@@ -29,7 +30,7 @@ async def sync_inbox(payload: SyncRequest, request: Request):
     concern, not built here (see README's "Known Design Trade-offs").
     """
     app_state = request.app.state
-    limiter_result = await app_state.rate_limiter.acquire(payload.tenant_id)
+    limiter_result = await app_state.rate_limiter.acquire(tenant_id)
     if not limiter_result.allowed:
         raise HTTPException(status_code=429, detail="tenant rate limit exceeded, please retry shortly")
 
@@ -42,7 +43,7 @@ async def sync_inbox(payload: SyncRequest, request: Request):
 
         async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
             for message in messages:
-                ctx = ActionContext(tenant_id=payload.tenant_id, message=message)
+                ctx = ActionContext(tenant_id=tenant_id, message=message)
                 persisted = False
 
                 async for ctx_snapshot, chunk in workflow.run(ctx):
@@ -87,12 +88,12 @@ async def sync_inbox(payload: SyncRequest, request: Request):
         if actions_created and payload.auto_notify_manager:
             await app_state.notifier.send(
                 NotificationRequest(
-                    tenant_id=payload.tenant_id,
+                    tenant_id=tenant_id,
                     channel=NotifyChannel.EMAIL,
                     recipient="owner@example.com",
                     subject=f"{actions_created} item(s) awaiting your review",
                     body="Log in to review AI-drafted replies awaiting your approval.",
-                    idempotency_key=f"{payload.tenant_id}:{datetime.now(timezone.utc).date()}:digest",
+                    idempotency_key=f"{tenant_id}:{datetime.now(timezone.utc).date()}:digest",
                 )
             )
 
@@ -102,22 +103,28 @@ async def sync_inbox(payload: SyncRequest, request: Request):
 
 
 @router.get("/assistant/pending", response_model=list[PendingActionResponse])
-async def list_pending_actions(tenant_id: str, request: Request):
+async def list_pending_actions(request: Request, tenant_id: str = Depends(require_tenant)):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
         return await repo.list_pending(tenant_id)
 
 
 @router.get("/assistant/{action_id}", response_model=PendingActionResponse)
-async def get_action(action_id: str, request: Request):
+async def get_action(action_id: str, request: Request, tenant_id: str = Depends(require_tenant)):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
         try:
-            return await repo.get(action_id)
+            record = await repo.get(action_id)
         except ActionNotFoundError:
             raise HTTPException(status_code=404, detail="action not found") from None
+    if record.tenant_id != tenant_id:
+        # Same 404 as "doesn't exist" — never confirm to a caller that another tenant's action exists.
+        raise HTTPException(status_code=404, detail="action not found")
+    return record
 
 
 @router.post("/assistant/{action_id}/decision", response_model=PendingActionResponse)
-async def submit_action_decision(action_id: str, payload: ActionDecisionRequest, request: Request):
+async def submit_action_decision(
+    action_id: str, payload: ActionDecisionRequest, request: Request, tenant_id: str = Depends(require_tenant)
+):
     """
     Records a merchant's approve/edit/reject decision. Approving or editing actually sends the reply
     via the configured EmailProvider — this is the human-review gate: AI drafts, a person decides what
@@ -126,13 +133,18 @@ async def submit_action_decision(action_id: str, payload: ActionDecisionRequest,
     app_state = request.app.state
     async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
         try:
+            record = await repo.get(action_id)
+        except ActionNotFoundError:
+            raise HTTPException(status_code=404, detail="action not found") from None
+        if record.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="action not found")
+
+        try:
             return await repo.record_decision(
                 action_id=action_id,
                 decision=payload.decision,
                 decided_by=payload.decided_by,
                 edited_reply=payload.edited_reply,
             )
-        except ActionNotFoundError:
-            raise HTTPException(status_code=404, detail="action not found") from None
         except InvalidDecisionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None

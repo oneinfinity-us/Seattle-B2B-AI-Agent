@@ -28,11 +28,17 @@ class Settings(BaseSettings):
     rate_limit_capacity: int = 30
     rate_limit_refill_per_sec: float = 0.5
 
-    # Google OAuth client, used to mint/refresh Gmail + Calendar access tokens for a tenant's
-    # GmailAccountCredential. Phase A provisions the credential itself out-of-band (see README); this
-    # client id/secret is still needed to refresh an expired access token.
+    # Google OAuth: this is now also how a merchant logs in (see app/api/auth_routes.py) — one
+    # "Continue with Google" grant both authenticates them and captures the refresh token their
+    # GmailAccountCredential needs for Gmail/Calendar access.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+
+    # Server-side session (Redis-backed) issued after a successful Google login. tenant_id is the
+    # connected Google account's email address.
+    session_cookie_name: str = "session"
+    session_ttl_seconds: int = 60 * 60 * 24 * 30
 
     # Notification channels
     sendgrid_api_key: str = ""

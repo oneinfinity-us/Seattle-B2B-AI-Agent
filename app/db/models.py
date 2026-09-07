@@ -56,7 +56,9 @@ class PendingActionRecord(Base):
 
 class GmailAccountCredential(Base):
     """
-    One Google OAuth grant per tenant, covering both Gmail and Calendar scopes.
+    One Google OAuth grant per tenant, covering both Gmail and Calendar scopes. Since a merchant logs
+    in via the same Google grant (see app/api/auth_routes.py), tenant_id is the connected account's
+    email address and this row doubles as the tenant record — there's no separate Tenant table.
 
     KNOWN GAP (MVP, not production-ready): tokens are stored in plaintext here. Before onboarding real
     customers this needs field-level encryption or a secrets manager (see README's "Known Design
@@ -67,6 +69,7 @@ class GmailAccountCredential(Base):
 
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     connected_email_address: Mapped[str] = mapped_column(String(256))
+    business_name: Mapped[str] = mapped_column(String(256), default="")
     refresh_token: Mapped[str] = mapped_column(Text)
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
