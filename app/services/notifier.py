@@ -5,9 +5,9 @@ asynchronous task.
 Why:
 1. Sending email/SMS is external I/O with unpredictable latency (could be a few hundred ms to a few
    seconds), and should not block the HTTP request or the SSE stream.
-2. Idempotency is required: if the same review gets processed twice due to a network retry, the
-   merchant must not receive two identical text messages. This is handled with an idempotency_key
-   (review_id + channel) written via Redis SETNX — only send for real once that succeeds.
+2. Idempotency is required: if the same sync gets triggered twice due to a network retry, the
+   merchant must not receive two identical digest emails. This is handled with an idempotency_key
+   (e.g. tenant_id + date) written via Redis SETNX — only send for real once that succeeds.
 3. In production, this should be a worker task under arq/Celery, consumed from a queue, rather than
    called directly in the request thread.
 """

@@ -6,8 +6,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 
-# Imported for its side effect: registers ReviewWorkflowRecord on Base.metadata.
-from app.db.models import ReviewWorkflowRecord  # noqa: F401
+# Imported for its side effect: registers these models on Base.metadata.
+from app.db.models import GmailAccountCredential, PendingActionRecord  # noqa: F401
 
 
 @pytest_asyncio.fixture

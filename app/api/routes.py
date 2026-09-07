@@ -1,123 +1,138 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from app.agents.review_agent import ReviewWorkflow, WorkflowContext
-from app.db.repository import InvalidDecisionError, WorkflowNotFoundError, repository_session
+from app.agents.assistant_agent import ActionContext, AssistantWorkflow
+from app.db.repository import ActionNotFoundError, InvalidDecisionError, repository_session
 from app.models.schemas import (
+    ActionDecisionRequest,
     NotificationRequest,
     NotifyChannel,
-    ProcessReviewRequest,
-    WorkflowDecisionRequest,
-    WorkflowRecordResponse,
+    PendingActionResponse,
+    SyncRequest,
 )
 
 router = APIRouter()
 
 
-def _fake_embedding(text: str) -> list[float]:
-    # Skeleton placeholder: in production, swap in a real embedding model call (e.g. voyage / text-embedding-3)
-    import hashlib
-
-    h = hashlib.sha256(text.encode()).digest()
-    return [b / 255.0 for b in h[:16]]
-
-
-@router.post("/reviews/process")
-async def process_review(payload: ProcessReviewRequest, request: Request):
+@router.post("/assistant/sync")
+async def sync_inbox(payload: SyncRequest, request: Request):
     """
-    Streams the processing pipeline back over SSE: classification result -> reply draft generated
-    token-by-token -> final state.
-    The frontend can consume it directly with EventSource, rendering as it receives data, without
-    waiting for the whole pipeline to finish.
+    Fetches messages received in the last 24h, runs each through the triage/draft agent, and persists
+    anything that needs a human decision. Streams progress over SSE.
 
-    The resulting draft is persisted and left in AWAITING_APPROVAL; a merchant closes it out via
-    POST /reviews/{workflow_id}/decision.
+    This stands in for "checks email daily" — a scheduler calling this on an interval is a deployment
+    concern, not built here (see README's "Known Design Trade-offs").
     """
     app_state = request.app.state
     limiter_result = await app_state.rate_limiter.acquire(payload.tenant_id)
     if not limiter_result.allowed:
         raise HTTPException(status_code=429, detail="tenant rate limit exceeded, please retry shortly")
 
-    workflow = ReviewWorkflow(app_state.llm_client, app_state.semantic_cache)
-    ctx = WorkflowContext(tenant_id=payload.tenant_id, review=payload.review)
-    embedding = _fake_embedding(payload.review.text)
+    workflow = AssistantWorkflow(app_state.llm_client, app_state.calendar_provider)
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    messages = await app_state.email_provider.list_recent_messages(since)
 
     async def event_generator():
-        async with repository_session(app_state.db_sessionmaker) as repo:
-            await repo.create(ctx)
+        actions_created = 0
 
-            async for ctx_snapshot, chunk in workflow.run(ctx, embedding):
-                if not chunk:
-                    # Only persist on state-transition checkpoints, not on every streamed token —
-                    # otherwise a long draft would trigger one DB write per chunk.
-                    await repo.sync_snapshot(ctx_snapshot)
+        async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
+            for message in messages:
+                ctx = ActionContext(tenant_id=payload.tenant_id, message=message)
+                persisted = False
 
-                yield {
-                    "event": "delta",
-                    "data": json.dumps(
-                        {
-                            "state": ctx_snapshot.state,
-                            "sentiment": ctx_snapshot.sentiment,
-                            "delta": chunk,
-                        }
-                    ),
-                }
+                async for ctx_snapshot, chunk in workflow.run(ctx):
+                    if ctx_snapshot.kind is None:
+                        break  # skipped (e.g. an automated sender) - nothing to persist
 
-        if payload.auto_notify_manager:
+                    if not persisted:
+                        await repo.create(
+                            action_id=ctx_snapshot.action_id,
+                            tenant_id=ctx_snapshot.tenant_id,
+                            kind=ctx_snapshot.kind,
+                            source_message_id=message.message_id,
+                            reply_to=message.sender,
+                            summary=f"{ctx_snapshot.kind.value.replace('_', ' ').title()}: {message.subject}",
+                        )
+                        persisted = True
+
+                    if not chunk:
+                        # Only persist on state-transition checkpoints, not on every streamed token —
+                        # otherwise a long draft would trigger one DB write per chunk.
+                        await repo.update_state(
+                            ctx_snapshot.action_id,
+                            state=ctx_snapshot.state,
+                            draft_content=ctx_snapshot.draft_content,
+                        )
+
+                    yield {
+                        "event": "delta",
+                        "data": json.dumps(
+                            {
+                                "action_id": ctx_snapshot.action_id,
+                                "message_id": message.message_id,
+                                "state": ctx_snapshot.state,
+                                "delta": chunk,
+                            }
+                        ),
+                    }
+
+                if persisted:
+                    actions_created += 1
+
+        if actions_created and payload.auto_notify_manager:
             await app_state.notifier.send(
                 NotificationRequest(
                     tenant_id=payload.tenant_id,
                     channel=NotifyChannel.EMAIL,
-                    recipient="manager@example.com",
-                    subject=f"New review awaiting approval: {payload.review.review_id}",
-                    body=ctx.reply_draft,
-                    idempotency_key=f"{payload.review.review_id}:email",
+                    recipient="owner@example.com",
+                    subject=f"{actions_created} item(s) awaiting your review",
+                    body="Log in to review AI-drafted replies awaiting your approval.",
+                    idempotency_key=f"{payload.tenant_id}:{datetime.now(timezone.utc).date()}:digest",
                 )
             )
 
-        yield {
-            "event": "done",
-            "data": json.dumps({"workflow_id": ctx.workflow_id, "final_draft": ctx.reply_draft}),
-        }
+        yield {"event": "done", "data": json.dumps({"actions_created": actions_created})}
 
     return EventSourceResponse(event_generator())
 
 
-@router.get("/reviews/pending", response_model=list[WorkflowRecordResponse])
-async def list_pending_reviews(tenant_id: str, request: Request):
+@router.get("/assistant/pending", response_model=list[PendingActionResponse])
+async def list_pending_actions(tenant_id: str, request: Request):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
         return await repo.list_pending(tenant_id)
 
 
-@router.get("/reviews/{workflow_id}", response_model=WorkflowRecordResponse)
-async def get_review_workflow(workflow_id: str, request: Request):
+@router.get("/assistant/{action_id}", response_model=PendingActionResponse)
+async def get_action(action_id: str, request: Request):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
         try:
-            return await repo.get(workflow_id)
-        except WorkflowNotFoundError:
-            raise HTTPException(status_code=404, detail="workflow not found") from None
+            return await repo.get(action_id)
+        except ActionNotFoundError:
+            raise HTTPException(status_code=404, detail="action not found") from None
 
 
-@router.post("/reviews/{workflow_id}/decision", response_model=WorkflowRecordResponse)
-async def submit_review_decision(workflow_id: str, payload: WorkflowDecisionRequest, request: Request):
+@router.post("/assistant/{action_id}/decision", response_model=PendingActionResponse)
+async def submit_action_decision(action_id: str, payload: ActionDecisionRequest, request: Request):
     """
-    Records a merchant's approve/edit/reject decision on a drafted reply. This is the human-review
-    gate: nothing here auto-publishes back to Yelp/Google yet — that's the next integration to add
-    once a decision lands here as APPROVED.
+    Records a merchant's approve/edit/reject decision. Approving or editing actually sends the reply
+    via the configured EmailProvider — this is the human-review gate: AI drafts, a person decides what
+    actually goes out under their name.
     """
-    async with repository_session(request.app.state.db_sessionmaker) as repo:
+    app_state = request.app.state
+    async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
         try:
             return await repo.record_decision(
-                workflow_id=workflow_id,
+                action_id=action_id,
                 decision=payload.decision,
                 decided_by=payload.decided_by,
                 edited_reply=payload.edited_reply,
             )
-        except WorkflowNotFoundError:
-            raise HTTPException(status_code=404, detail="workflow not found") from None
+        except ActionNotFoundError:
+            raise HTTPException(status_code=404, detail="action not found") from None
         except InvalidDecisionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None

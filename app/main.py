@@ -6,11 +6,12 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from app.api.routes import router
-from app.core.cache import SemanticCache
 from app.core.config import get_settings
 from app.core.llm_client import LLMClient
 from app.core.rate_limiter import TenantRateLimiter
 from app.db import Base, create_engine_and_sessionmaker
+from app.integrations.calendar_provider import FakeCalendarProvider
+from app.integrations.email_provider import FakeEmailProvider
 from app.services.notifier import NotificationService
 
 
@@ -38,9 +39,14 @@ async def lifespan(app: FastAPI):
     app.state.rate_limiter = TenantRateLimiter(
         redis, capacity=settings.rate_limit_capacity, refill_per_sec=settings.rate_limit_refill_per_sec
     )
-    app.state.semantic_cache = SemanticCache(redis, settings.semantic_cache_similarity_threshold)
     app.state.llm_client = LLMClient(settings)
     app.state.notifier = NotificationService(redis)
+
+    # Until Phase B's OAuth connect flow exists, every tenant shares a single in-memory fake
+    # provider. Swap this for a per-tenant GmailProvider/GoogleCalendarProvider lookup (built from
+    # that tenant's GmailAccountCredential row) once real credentials exist.
+    app.state.email_provider = FakeEmailProvider()
+    app.state.calendar_provider = FakeCalendarProvider()
 
     yield
 
@@ -48,7 +54,7 @@ async def lifespan(app: FastAPI):
     await db_engine.dispose()
 
 
-app = FastAPI(title="Yelp Review AI Agent", lifespan=lifespan)
+app = FastAPI(title="Seattle B2B AI Assistant", lifespan=lifespan)
 app.include_router(router, prefix="/api/v1")
 
 

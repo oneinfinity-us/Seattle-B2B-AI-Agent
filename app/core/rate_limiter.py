@@ -7,7 +7,7 @@ Why not an in-memory counter / a simple INCR + EXPIRE:
 2. INCR+EXPIRE has a "boundary burst" problem under high concurrency (e.g., landing right at a window
    boundary can let through twice the intended quota).
 3. A token bucket allows "bursty traffic + smooth refill," which better matches the real scenario:
-   when a merchant receives 20 new Yelp reviews at once, it's fine to process them concurrently for a
+   when a merchant's inbox has 20 new emails at once, it's fine to process them concurrently for a
    short burst, but the long-term rate is still controlled.
 
 A Lua script is used because "read remaining tokens -> check -> deduct" must be an atomic operation,

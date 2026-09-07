@@ -13,7 +13,7 @@ from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.schemas import DecisionType, Sentiment, WorkflowState
+from app.models.schemas import ActionKind, ActionState, DecisionType
 
 
 def _new_id() -> str:
@@ -28,24 +28,49 @@ def _enum_column(enum_cls: type) -> SAEnum:
     return SAEnum(enum_cls, values_callable=lambda cls: [member.value for member in cls])
 
 
-class ReviewWorkflowRecord(Base):
-    """Persisted state for one review's classify -> draft -> human-approval workflow."""
+class PendingActionRecord(Base):
+    """Persisted state for one AI-drafted action (an email reply, or a scheduling proposal) awaiting
+    human approval before it's sent."""
 
-    __tablename__ = "review_workflows"
+    __tablename__ = "pending_actions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     tenant_id: Mapped[str] = mapped_column(String(128), index=True)
-    review_id: Mapped[str] = mapped_column(String(128), index=True)
-    review_text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[ActionKind] = mapped_column(_enum_column(ActionKind))
+    source_message_id: Mapped[str] = mapped_column(String(256), index=True)
+    reply_to: Mapped[str] = mapped_column(String(256), default="")
+    summary: Mapped[str] = mapped_column(String(512), default="")
 
-    sentiment: Mapped[Sentiment | None] = mapped_column(_enum_column(Sentiment), nullable=True)
-    state: Mapped[WorkflowState] = mapped_column(_enum_column(WorkflowState), default=WorkflowState.RECEIVED)
-    reply_draft: Mapped[str] = mapped_column(Text, default="")
-    final_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[ActionState] = mapped_column(_enum_column(ActionState), default=ActionState.RECEIVED)
+    draft_content: Mapped[str] = mapped_column(Text, default="")
+    final_content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     decision: Mapped[DecisionType | None] = mapped_column(_enum_column(DecisionType), nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(256), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class GmailAccountCredential(Base):
+    """
+    One Google OAuth grant per tenant, covering both Gmail and Calendar scopes.
+
+    KNOWN GAP (MVP, not production-ready): tokens are stored in plaintext here. Before onboarding real
+    customers this needs field-level encryption or a secrets manager (see README's "Known Design
+    Trade-offs").
+    """
+
+    __tablename__ = "gmail_account_credentials"
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    connected_email_address: Mapped[str] = mapped_column(String(256))
+    refresh_token: Mapped[str] = mapped_column(Text)
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scopes: Mapped[str] = mapped_column(Text)  # comma-separated
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
