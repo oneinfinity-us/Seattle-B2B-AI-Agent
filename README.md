@@ -66,33 +66,6 @@ By default the app uses a local SQLite file (`dev.db`) for persistence and in-me
 email/calendar providers — no Google credentials needed to run the full triage -> draft -> approve ->
 "send" loop locally.
 
-## Deploying (MVP)
-
-For a pilot with a handful of real merchants, skip Kubernetes/EKS — it solves scaling problems this
-stage doesn't have yet, and the control plane alone runs ~$70+/month before any real usage. A
-PaaS (Render, Railway, or similar) gets a real HTTPS URL + managed Postgres + managed Redis running in
-minutes:
-
-1. Push this repo (the included `Dockerfile` builds it as-is).
-2. Create three resources on the platform: a **web service** built from `Dockerfile`, a **Postgres**
-   database, and a **Redis** instance.
-3. Set these environment variables on the web service (get Postgres/Redis connection strings from the
-   platform — `postgres://`/`postgresql://` URLs are normalized to the asyncpg driver automatically, see
-   `app/db/base.py`):
-   - `DATABASE_URL` — the Postgres connection string
-   - `REDIS_URL` — the Redis connection string
-   - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — from Google Cloud Console
-   - `GOOGLE_OAUTH_REDIRECT_URI` — `https://<your-app-domain>/api/v1/auth/google/callback`
-   - `ANTHROPIC_API_KEY`
-   - `SESSION_COOKIE_SECURE=true` — required once served over HTTPS (anything not `localhost`)
-4. In Google Cloud Console's OAuth client, add the same `https://<your-app-domain>/api/v1/auth/google/callback`
-   to **Authorized redirect URIs**.
-5. Healthcheck path for the platform: `GET /healthz`.
-
-A from-scratch Terraform + Kubernetes/EKS deployment is a separate, valid exercise (e.g. for
-demonstrating that experience) — see the project history for that plan if picking it back up; it's
-deliberately not what this MVP path uses.
-
 ## Known Design Trade-offs
 
 1. **Refreshed access tokens aren't written back.** `GmailProvider`/`GoogleCalendarProvider` refresh an
