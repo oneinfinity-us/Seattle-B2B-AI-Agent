@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import PendingActionRecord
 from app.integrations.email_provider import EmailProvider
-from app.models.schemas import ActionKind, ActionState, DecisionType
+from app.models.schemas import ActionKind, ActionState, DecisionType, MetricsSummary
+
+
+def _seconds_between(later: datetime, earlier: datetime) -> float:
+    # SQLite doesn't reliably round-trip tzinfo the way Postgres does; normalize both sides to naive
+    # (everything is already stored as UTC) so the subtraction never raises on an aware/naive mismatch.
+    return (later.replace(tzinfo=None) - earlier.replace(tzinfo=None)).total_seconds()
 
 
 class ActionNotFoundError(Exception):
@@ -55,6 +61,8 @@ class PendingActionRepository:
         record.state = state
         if draft_content is not None:
             record.draft_content = draft_content
+        if state == ActionState.AWAITING_APPROVAL and record.drafted_at is None:
+            record.drafted_at = datetime.now(timezone.utc)
         await self._session.commit()
 
     async def get(self, action_id: str) -> PendingActionRecord:
@@ -117,6 +125,57 @@ class PendingActionRepository:
         await self._session.commit()
         await self._session.refresh(record)
         return record
+
+    async def get_metrics(self, tenant_id: str) -> MetricsSummary:
+        stmt = select(PendingActionRecord).where(PendingActionRecord.tenant_id == tenant_id)
+        result = await self._session.execute(stmt)
+        records = list(result.scalars().all())
+
+        pending_count = sum(1 for r in records if r.state == ActionState.AWAITING_APPROVAL)
+        sent_count = sum(1 for r in records if r.state == ActionState.SENT)
+        rejected_count = sum(1 for r in records if r.state == ActionState.REJECTED)
+        failed_count = sum(1 for r in records if r.state == ActionState.FAILED)
+
+        approved_without_edits_count = sum(
+            1 for r in records if r.state == ActionState.SENT and r.decision == DecisionType.APPROVED
+        )
+        edited_before_send_count = sum(
+            1 for r in records if r.state == ActionState.SENT and r.decision == DecisionType.EDITED
+        )
+
+        decided_sends = approved_without_edits_count + edited_before_send_count
+        override_rate = edited_before_send_count / decided_sends if decided_sends else None
+
+        all_decided = sent_count + rejected_count + failed_count
+        rejection_rate = rejected_count / all_decided if all_decided else None
+
+        draft_durations = [
+            _seconds_between(r.drafted_at, r.created_at) for r in records if r.drafted_at is not None
+        ]
+        avg_draft_seconds = sum(draft_durations) / len(draft_durations) if draft_durations else None
+
+        decision_durations = [
+            _seconds_between(r.decided_at, r.drafted_at)
+            for r in records
+            if r.decided_at is not None and r.drafted_at is not None
+        ]
+        avg_decision_seconds = (
+            sum(decision_durations) / len(decision_durations) if decision_durations else None
+        )
+
+        return MetricsSummary(
+            total_actions=len(records),
+            pending_count=pending_count,
+            sent_count=sent_count,
+            rejected_count=rejected_count,
+            failed_count=failed_count,
+            approved_without_edits_count=approved_without_edits_count,
+            edited_before_send_count=edited_before_send_count,
+            override_rate=override_rate,
+            rejection_rate=rejection_rate,
+            avg_draft_seconds=avg_draft_seconds,
+            avg_decision_seconds=avg_decision_seconds,
+        )
 
     async def _get(self, action_id: str) -> PendingActionRecord:
         record = await self._session.get(PendingActionRecord, action_id)

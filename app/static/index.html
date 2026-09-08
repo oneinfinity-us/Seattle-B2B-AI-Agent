@@ -117,7 +117,7 @@
     font-size: 12.5px; color: var(--ink-muted); background: var(--surface); border: 1px solid var(--border);
     border-radius: 9px; padding: 8px 12px; margin-bottom: 16px;
   }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 22px; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-sm); }
   .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); font-weight: 600; }
   .stat-value { font-family: var(--font-mono); font-size: 26px; font-weight: 500; margin-top: 4px; }
@@ -125,7 +125,7 @@
   .stat-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
 
   .workspace { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; }
-  @media (max-width: 860px) { .workspace { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 860px) { .workspace { grid-template-columns: 1fr; } }
 
   .queue-col h2 { font-size: 14px; font-weight: 600; font-family: var(--font-body); color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
   .queue-note { font-size: 12px; color: var(--ink-faint); margin-bottom: 10px; }
@@ -260,7 +260,17 @@
 (function () {
   "use strict";
 
-  var state = { tenantId: null, businessName: "", connectedEmail: "", actions: [], selectedId: null };
+  var state = { tenantId: null, businessName: "", connectedEmail: "", actions: [], selectedId: null, metrics: null };
+
+  function formatDuration(seconds) {
+    if (seconds == null) return "—";
+    if (seconds < 60) return seconds.toFixed(1) + "s";
+    var m = Math.floor(seconds / 60);
+    return m + "m " + Math.round(seconds % 60) + "s";
+  }
+  function formatPercent(rate) {
+    return rate == null ? "—" : Math.round(rate * 100) + "%";
+  }
 
   function timeAgo(iso) {
     var s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -323,6 +333,10 @@
       var firstPending = state.actions.filter(function (a) { return a.state === "awaiting_approval"; })[0];
       state.selectedId = firstPending ? firstPending.id : null;
     }
+
+    var metricsRes = await fetch("/api/v1/assistant/metrics", { credentials: "include" });
+    state.metrics = metricsRes.ok ? await metricsRes.json() : null;
+
     render();
   }
 
@@ -334,10 +348,15 @@
     var pending = state.actions.filter(function (a) { return a.state === "awaiting_approval"; }).length;
     var sent = state.actions.filter(function (a) { return a.state === "sent"; }).length;
     var rejected = state.actions.filter(function (a) { return a.state === "rejected" || a.state === "failed"; }).length;
+    var m = state.metrics;
+    var approvedAsIs = m && m.override_rate != null ? formatPercent(1 - m.override_rate) : "—";
+    var avgDraft = m ? formatDuration(m.avg_draft_seconds) : "—";
     document.getElementById("stats").innerHTML =
       stat("Needs review", pending, pending > 0 ? "accent-num" : "", "awaiting your decision") +
       stat("Sent", sent, "", "auto-sent after approval") +
-      stat("Rejected / failed", rejected, "", "handled outside the assistant, or send errors");
+      stat("Rejected / failed", rejected, "", "handled outside the assistant, or send errors") +
+      stat("Approved as-is", approvedAsIs, "", "sent without any edits") +
+      stat("Avg. time to draft", avgDraft, "", "received to ready for review");
   }
   function stat(label, value, cls, sub) {
     return '<div class="stat"><div class="stat-label">' + label + '</div><div class="stat-value ' + cls + '">' + value + '</div><div class="stat-sub">' + sub + '</div></div>';

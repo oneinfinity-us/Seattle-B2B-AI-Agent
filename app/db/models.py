@@ -45,6 +45,11 @@ class PendingActionRecord(Base):
     draft_content: Mapped[str] = mapped_column(Text, default="")
     final_content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Set once, when the state first reaches AWAITING_APPROVAL. Distinct from updated_at, which gets
+    # overwritten again at decision time — without this there'd be no way to separately measure
+    # "how long drafting took" vs. "how long the merchant took to decide".
+    drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     decision: Mapped[DecisionType | None] = mapped_column(_enum_column(DecisionType), nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(256), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

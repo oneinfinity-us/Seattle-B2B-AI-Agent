@@ -73,6 +73,7 @@ class PendingActionResponse(BaseModel):
     state: ActionState
     draft_content: str
     final_content: str | None
+    drafted_at: datetime | None
     decision: DecisionType | None
     decided_by: str | None
     decided_at: datetime | None
@@ -80,6 +81,24 @@ class PendingActionResponse(BaseModel):
     error_message: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class MetricsSummary(BaseModel):
+    """Aggregated from PendingActionRecord — see PendingActionRepository.get_metrics. Rates/averages
+    are None (not 0) when their denominator is zero, so the frontend can render "not enough data yet"
+    instead of a misleading 0%."""
+
+    total_actions: int
+    pending_count: int
+    sent_count: int
+    rejected_count: int
+    failed_count: int
+    approved_without_edits_count: int
+    edited_before_send_count: int
+    override_rate: float | None
+    rejection_rate: float | None
+    avg_draft_seconds: float | None
+    avg_decision_seconds: float | None
 
 
 class NotifyChannel(StrEnum):

@@ -54,6 +54,18 @@ async def _seed_awaiting_approval(
     return action_id
 
 
+async def test_get_metrics_returns_summary_for_the_logged_in_tenant(client, db_sessionmaker):
+    await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-1")
+    await _seed_awaiting_approval(db_sessionmaker, tenant_id="tenant-2")
+
+    response = await client.get("/api/v1/assistant/metrics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_actions"] == 1
+    assert body["pending_count"] == 1
+
+
 async def test_get_action_returns_404_when_missing(client):
     response = await client.get("/api/v1/assistant/does-not-exist")
     assert response.status_code == 404

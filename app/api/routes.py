@@ -12,6 +12,7 @@ from app.db.repository import ActionNotFoundError, InvalidDecisionError, reposit
 from app.integrations.provider_factory import build_providers_for_tenant
 from app.models.schemas import (
     ActionDecisionRequest,
+    MetricsSummary,
     NotificationRequest,
     NotifyChannel,
     PendingActionResponse,
@@ -117,6 +118,14 @@ async def list_actions(request: Request, tenant_id: str = Depends(require_tenant
 async def list_pending_actions(request: Request, tenant_id: str = Depends(require_tenant)):
     async with repository_session(request.app.state.db_sessionmaker) as repo:
         return await repo.list_pending(tenant_id)
+
+
+@router.get("/assistant/metrics", response_model=MetricsSummary)
+async def get_metrics(request: Request, tenant_id: str = Depends(require_tenant)):
+    """Aggregated approval/override/rejection rates and draft/decision latency, computed from
+    PendingActionRecord — see PendingActionRepository.get_metrics for the definitions."""
+    async with repository_session(request.app.state.db_sessionmaker) as repo:
+        return await repo.get_metrics(tenant_id)
 
 
 @router.get("/assistant/{action_id}", response_model=PendingActionResponse)
