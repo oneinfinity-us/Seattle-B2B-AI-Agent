@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.agents.assistant_agent import ActionContext, AssistantWorkflow
 from app.core.sessions import require_tenant
 from app.db.repository import ActionNotFoundError, InvalidDecisionError, repository_session
+from app.integrations.provider_factory import build_providers_for_tenant
 from app.models.schemas import (
     ActionDecisionRequest,
     NotificationRequest,
@@ -34,14 +35,16 @@ async def sync_inbox(payload: SyncRequest, request: Request, tenant_id: str = De
     if not limiter_result.allowed:
         raise HTTPException(status_code=429, detail="tenant rate limit exceeded, please retry shortly")
 
-    workflow = AssistantWorkflow(app_state.llm_client, app_state.calendar_provider)
+    email_provider, calendar_provider = await build_providers_for_tenant(app_state, tenant_id)
+
+    workflow = AssistantWorkflow(app_state.llm_client, calendar_provider)
     since = datetime.now(timezone.utc) - timedelta(days=1)
-    messages = await app_state.email_provider.list_recent_messages(since)
+    messages = await email_provider.list_recent_messages(since)
 
     async def event_generator():
         actions_created = 0
 
-        async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
+        async with repository_session(app_state.db_sessionmaker, email_provider) as repo:
             for message in messages:
                 ctx = ActionContext(tenant_id=tenant_id, message=message)
                 persisted = False
@@ -139,7 +142,8 @@ async def submit_action_decision(
     actually goes out under their name.
     """
     app_state = request.app.state
-    async with repository_session(app_state.db_sessionmaker, app_state.email_provider) as repo:
+    email_provider, _calendar_provider = await build_providers_for_tenant(app_state, tenant_id)
+    async with repository_session(app_state.db_sessionmaker, email_provider) as repo:
         try:
             record = await repo.get(action_id)
         except ActionNotFoundError:

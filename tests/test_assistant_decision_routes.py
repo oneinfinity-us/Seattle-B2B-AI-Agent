@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routes import router
 from app.core.sessions import require_tenant
 from app.db.repository import repository_session
+from app.integrations.calendar_provider import FakeCalendarProvider
 from app.integrations.email_provider import FakeEmailProvider
 from app.models.schemas import ActionKind, ActionState, DecisionType
 
@@ -20,13 +21,15 @@ async def email_provider():
 
 @pytest_asyncio.fixture
 async def client(db_sessionmaker, email_provider):
-    # These endpoints only touch app.state.db_sessionmaker/email_provider, so we don't need the full
-    # lifespan (Redis, LLM client, calendar provider, etc.) that app/main.py wires up for /assistant/sync.
+    # These endpoints only touch app.state.db_sessionmaker/email_provider (no tenant here has a stored
+    # GmailAccountCredential, so build_providers_for_tenant always falls back to these fakes), so we
+    # don't need the full lifespan (Redis, LLM client, etc.) that app/main.py wires up.
     # require_tenant is overridden instead of going through a real session cookie + Redis.
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.state.db_sessionmaker = db_sessionmaker
     app.state.email_provider = email_provider
+    app.state.calendar_provider = FakeCalendarProvider()
     app.dependency_overrides[require_tenant] = lambda: "tenant-1"
 
     transport = ASGITransport(app=app)
