@@ -36,9 +36,11 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
 
     # Server-side session (Redis-backed) issued after a successful Google login. tenant_id is the
-    # connected Google account's email address.
+    # connected Google account's email address. session_cookie_secure must be true once the app is
+    # served over HTTPS (any real deployment) — false only for http://localhost dev.
     session_cookie_name: str = "session"
     session_ttl_seconds: int = 60 * 60 * 24 * 30
+    session_cookie_secure: bool = False
 
     # Notification channels
     sendgrid_api_key: str = ""

@@ -73,6 +73,7 @@ async def google_callback(code: str, state: str, request: Request, business_name
         max_age=settings.session_ttl_seconds,
         httponly=True,
         samesite="lax",
+        secure=settings.session_cookie_secure,
     )
     return response
 
