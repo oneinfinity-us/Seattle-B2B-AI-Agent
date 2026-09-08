@@ -52,6 +52,30 @@ async def test_skips_automated_sender():
     assert llm.received_prompts == []
 
 
+async def test_skips_bulk_mail_even_from_a_normal_looking_address():
+    llm = StubLLMClient()
+    workflow = AssistantWorkflow(llm, FakeCalendarProvider())
+    message = _make_message(sender="info@members.netflix.com", is_bulk_mail=True)
+    ctx = ActionContext(tenant_id="tenant-1", message=message)
+
+    final = await _run_to_completion(workflow, ctx)
+
+    assert final.kind is None
+    assert llm.received_prompts == []
+
+
+async def test_skips_automated_bounce_or_autoresponder():
+    llm = StubLLMClient()
+    workflow = AssistantWorkflow(llm, FakeCalendarProvider())
+    message = _make_message(sender="mailer-daemon@googlemail.com", is_automated=True)
+    ctx = ActionContext(tenant_id="tenant-1", message=message)
+
+    final = await _run_to_completion(workflow, ctx)
+
+    assert final.kind is None
+    assert llm.received_prompts == []
+
+
 async def test_classifies_and_drafts_plain_reply():
     llm = StubLLMClient(["Sure, ", "we're open every Sunday from 10am-4pm."])
     workflow = AssistantWorkflow(llm, FakeCalendarProvider())

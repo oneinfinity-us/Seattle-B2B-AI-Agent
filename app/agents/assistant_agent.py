@@ -23,7 +23,7 @@ from app.integrations.calendar_provider import CalendarProvider
 from app.models.schemas import ActionKind, ActionState, EmailMessage
 
 _SCHEDULING_SIGNALS = ["schedule", "meet", "appointment", "available", "reschedule", "calendar"]
-_SKIP_SENDERS = ["noreply", "no-reply", "notifications@", "newsletter"]
+_SKIP_SENDERS = ["noreply", "no-reply", "notifications@", "newsletter", "mailer-daemon", "postmaster"]
 
 
 class ActionContext(BaseModel):
@@ -41,7 +41,14 @@ class AssistantWorkflow:
         self._calendar = calendar_provider
 
     def _classify(self, message: EmailMessage) -> ActionKind | None:
-        # Cheap keyword heuristic for v1, mirrors the sentiment heuristic the old review agent used.
+        # Header-based signals first (List-Unsubscribe / Auto-Submitted) — these come from real email
+        # standards bulk senders and mail systems already comply with, so they catch things a sender
+        # address never would (e.g. a marketing email from a normal-looking "info@" address).
+        if message.is_bulk_mail or message.is_automated:
+            return None
+
+        # Cheap keyword fallback on the sender address for anything the headers didn't catch (or in
+        # tests/dev where FakeEmailProvider messages don't set the header-derived flags).
         # TODO: swap for an LLM structured-output classification once there's a labeled email set to
         # validate against.
         sender = message.sender.lower()

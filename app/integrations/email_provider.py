@@ -70,6 +70,8 @@ class GmailProvider:
                     subject=headers.get("Subject", ""),
                     body=_extract_plain_text_body(full["payload"]),
                     received_at=datetime.fromtimestamp(int(full["internalDate"]) / 1000),
+                    is_bulk_mail="List-Unsubscribe" in headers,
+                    is_automated=headers.get("Auto-Submitted", "no").lower() != "no",
                 )
             )
         return messages

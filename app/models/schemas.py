@@ -35,6 +35,11 @@ class EmailMessage(BaseModel):
     subject: str
     body: str
     received_at: datetime
+    # Derived from standard email headers (see GmailProvider): List-Unsubscribe marks bulk/marketing
+    # mail (required on legitimate bulk senders since Gmail's 2024 sender rules), Auto-Submitted marks
+    # bounces/autoresponders (RFC 3834). Far more reliable than guessing from the sender address.
+    is_bulk_mail: bool = False
+    is_automated: bool = False
 
 
 class SyncRequest(BaseModel):
