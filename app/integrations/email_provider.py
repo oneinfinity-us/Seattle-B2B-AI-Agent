@@ -55,7 +55,10 @@ class GmailProvider:
 
     def _list_recent_sync(self, since: datetime) -> list[EmailMessage]:
         service = self._build_service()
-        query = f"after:{int(since.timestamp())}"
+        # Gmail's search matches every label by default, including Sent — without `in:inbox` the
+        # merchant's own outgoing replies come back as "new" messages on the next sync and the
+        # assistant drafts a reply to itself.
+        query = f"in:inbox after:{int(since.timestamp())}"
         result = service.users().messages().list(userId="me", q=query).execute()
 
         messages: list[EmailMessage] = []

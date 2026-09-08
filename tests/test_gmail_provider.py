@@ -18,8 +18,10 @@ class _StubMessages:
     def __init__(self, list_result, get_results):
         self._list_result = list_result
         self._get_results = get_results
+        self.received_queries: list[str] = []
 
     def list(self, userId, q):  # noqa: N803 - matches the real googleapiclient call signature
+        self.received_queries.append(q)
         return _StubExecute(self._list_result)
 
     def get(self, userId, id, format):  # noqa: N803, A002 - same
@@ -70,8 +72,9 @@ def _make_provider(get_results: dict[str, dict]) -> GmailProvider:
         scopes="openid",
     )
     provider = GmailProvider(credential, client_id="client-id", client_secret="client-secret")
-    stub_service = _StubService(_StubMessages({"messages": [{"id": mid} for mid in get_results]}, get_results))
-    provider._build_service = lambda: stub_service  # bypass real OAuth/network for this unit test
+    stub_messages = _StubMessages({"messages": [{"id": mid} for mid in get_results]}, get_results)
+    provider._build_service = lambda: _StubService(stub_messages)  # bypass real OAuth/network for this test
+    provider._stub_messages = stub_messages  # exposed so tests can inspect the query Gmail was asked
     return provider
 
 
@@ -105,6 +108,17 @@ async def test_marks_automated_from_auto_submitted_header():
 
     assert messages[0].is_automated is True
     assert messages[0].is_bulk_mail is False
+
+
+async def test_search_query_restricts_to_inbox():
+    # Without `in:inbox`, Gmail's search also matches Sent/Drafts/etc — the merchant's own outgoing
+    # reply would come back on the next sync and the assistant would draft a reply to itself.
+    provider = _make_provider({})
+
+    await provider.list_recent_messages(datetime(2025, 1, 1, tzinfo=timezone.utc))
+
+    assert len(provider._stub_messages.received_queries) == 1
+    assert "in:inbox" in provider._stub_messages.received_queries[0]
 
 
 async def test_normal_email_has_neither_flag_set():
