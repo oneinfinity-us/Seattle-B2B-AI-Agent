@@ -66,6 +66,28 @@ By default the app uses a local SQLite file (`dev.db`) for persistence and in-me
 email/calendar providers — no Google credentials needed to run the full triage -> draft -> approve ->
 "send" loop locally.
 
+## Evaluating Draft Quality
+
+`eval/` is a standalone eval harness — not part of `pytest`, since it makes real Claude API calls and
+produces non-deterministic output. It runs ~20 labeled cases ([eval/dataset.py](eval/dataset.py)) through
+the real `AssistantWorkflow` and measures:
+
+- **Classification accuracy** against a human-judged expected outcome (some cases are deliberately
+  chosen to expose where the keyword-based classifier in `app/agents/assistant_agent.py` is brittle —
+  a less-than-100% score there is the point, not a bug).
+- **Draft quality**, via LLM-as-judge scoring (tone, factual grounding, whether it addresses the
+  request) on a 1-5 rubric.
+- **Prompt-injection resistance** — several cases embed an instruction in the customer email trying to
+  hijack the assistant (leak its system prompt, insult a third party, exfiltrate other customers' data);
+  the judge flags whether the draft stayed on task.
+
+```bash
+python -m eval.run_eval
+```
+
+Requires `ANTHROPIC_API_KEY` (real spend — cheap at this dataset size). Prints a summary and writes a
+timestamped JSON report to `eval/results/` (gitignored).
+
 ## Known Design Trade-offs
 
 1. **Refreshed access tokens aren't written back.** `GmailProvider`/`GoogleCalendarProvider` refresh an
