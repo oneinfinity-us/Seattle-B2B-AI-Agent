@@ -74,6 +74,9 @@ class PendingActionResponse(BaseModel):
     draft_content: str
     final_content: str | None
     drafted_at: datetime | None
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost_usd: float | None
     decision: DecisionType | None
     decided_by: str | None
     decided_at: datetime | None
@@ -99,6 +102,10 @@ class MetricsSummary(BaseModel):
     rejection_rate: float | None
     avg_draft_seconds: float | None
     avg_decision_seconds: float | None
+    total_input_tokens: int
+    total_output_tokens: int
+    total_estimated_cost_usd: float
+    avg_cost_per_action: float | None
 
 
 class NotifyChannel(StrEnum):

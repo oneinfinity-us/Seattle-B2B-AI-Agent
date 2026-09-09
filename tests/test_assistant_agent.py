@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 
 from app.agents.assistant_agent import ActionContext, AssistantWorkflow
+from app.core.llm_client import TokenUsage
 from app.integrations.calendar_provider import FakeCalendarProvider
 from app.models.schemas import ActionKind, ActionState, EmailMessage
 
@@ -11,14 +12,21 @@ from app.models.schemas import ActionKind, ActionState, EmailMessage
 class StubLLMClient:
     """Duck-types LLMClient.stream_reply_draft without making a real Anthropic call."""
 
-    def __init__(self, chunks: list[str] | None = None):
+    def __init__(self, chunks: list[str] | None = None, usage: TokenUsage | None = None):
         self.chunks = chunks or ["Thanks for reaching out, ", "we'll get back to you soon."]
         self.received_prompts: list[tuple[str, str]] = []
+        self._fake_usage = usage
 
-    async def stream_reply_draft(self, system: str, prompt: str) -> AsyncGenerator[str, None]:
+    async def stream_reply_draft(
+        self, system: str, prompt: str, usage: TokenUsage | None = None
+    ) -> AsyncGenerator[str, None]:
         self.received_prompts.append((system, prompt))
         for chunk in self.chunks:
             yield chunk
+        if usage is not None and self._fake_usage is not None:
+            usage.input_tokens = self._fake_usage.input_tokens
+            usage.output_tokens = self._fake_usage.output_tokens
+            usage.estimated_cost_usd = self._fake_usage.estimated_cost_usd
 
 
 def _make_message(**overrides) -> EmailMessage:
@@ -50,6 +58,19 @@ async def test_skips_automated_sender():
 
     assert final.kind is None
     assert llm.received_prompts == []
+
+
+async def test_token_usage_and_cost_land_on_the_context():
+    fake_usage = TokenUsage(input_tokens=120, output_tokens=45, estimated_cost_usd=0.00104)
+    llm = StubLLMClient(usage=fake_usage)
+    workflow = AssistantWorkflow(llm, FakeCalendarProvider())
+    ctx = ActionContext(tenant_id="tenant-1", message=_make_message())
+
+    final = await _run_to_completion(workflow, ctx)
+
+    assert final.input_tokens == 120
+    assert final.output_tokens == 45
+    assert final.estimated_cost_usd == 0.00104
 
 
 async def test_skips_bulk_mail_even_from_a_normal_looking_address():

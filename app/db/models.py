@@ -7,9 +7,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, Float
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import String, Text
+from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -49,6 +49,11 @@ class PendingActionRecord(Base):
     # overwritten again at decision time — without this there'd be no way to separately measure
     # "how long drafting took" vs. "how long the merchant took to decide".
     drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Populated only on a real (non-fallback) LLM completion — see LLMClient.TokenUsage.
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     decision: Mapped[DecisionType | None] = mapped_column(_enum_column(DecisionType), nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(256), nullable=True)

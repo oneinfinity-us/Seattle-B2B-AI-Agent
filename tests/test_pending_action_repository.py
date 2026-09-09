@@ -49,6 +49,24 @@ async def test_update_state_sets_state_and_draft(db_sessionmaker):
     assert record.draft_content == "Thanks!"
 
 
+async def test_update_state_persists_token_usage_and_cost(db_sessionmaker):
+    async with repository_session(db_sessionmaker) as repo:
+        action_id = await _create_action(repo)
+        await repo.update_state(
+            action_id,
+            state=ActionState.AWAITING_APPROVAL,
+            draft_content="Thanks!",
+            input_tokens=120,
+            output_tokens=45,
+            estimated_cost_usd=0.00104,
+        )
+        record = await repo.get(action_id)
+
+    assert record.input_tokens == 120
+    assert record.output_tokens == 45
+    assert record.estimated_cost_usd == 0.00104
+
+
 async def test_get_missing_action_raises(db_sessionmaker):
     async with repository_session(db_sessionmaker) as repo:
         with pytest.raises(ActionNotFoundError):
@@ -221,6 +239,36 @@ async def test_get_metrics_returns_none_rates_when_no_data(db_sessionmaker):
     assert metrics.rejection_rate is None
     assert metrics.avg_draft_seconds is None
     assert metrics.avg_decision_seconds is None
+    assert metrics.total_input_tokens == 0
+    assert metrics.total_output_tokens == 0
+    assert metrics.total_estimated_cost_usd == 0.0
+    assert metrics.avg_cost_per_action is None
+
+
+async def test_get_metrics_aggregates_token_usage_and_cost(db_sessionmaker):
+    async with repository_session(db_sessionmaker) as repo:
+        first_id = await _create_action(repo)
+        await repo.update_state(
+            first_id, state=ActionState.AWAITING_APPROVAL, draft_content="draft",
+            input_tokens=100, output_tokens=40, estimated_cost_usd=0.001,
+        )
+
+        second_id = await _create_action(repo)
+        await repo.update_state(
+            second_id, state=ActionState.AWAITING_APPROVAL, draft_content="draft",
+            input_tokens=200, output_tokens=60, estimated_cost_usd=0.002,
+        )
+
+        # Skipped emails never draft, so they never get token/cost fields -- must not be counted as a
+        # zero-cost action and drag the average down.
+        await _create_action(repo)
+
+        metrics = await repo.get_metrics("tenant-1")
+
+    assert metrics.total_input_tokens == 300
+    assert metrics.total_output_tokens == 100
+    assert metrics.total_estimated_cost_usd == pytest.approx(0.003)
+    assert metrics.avg_cost_per_action == pytest.approx(0.0015)
 
 
 async def test_get_metrics_is_scoped_to_tenant(db_sessionmaker):

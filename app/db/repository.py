@@ -55,12 +55,25 @@ class PendingActionRepository:
         return record
 
     async def update_state(
-        self, action_id: str, *, state: ActionState, draft_content: str | None = None
+        self,
+        action_id: str,
+        *,
+        state: ActionState,
+        draft_content: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        estimated_cost_usd: float | None = None,
     ) -> None:
         record = await self._get(action_id)
         record.state = state
         if draft_content is not None:
             record.draft_content = draft_content
+        if input_tokens is not None:
+            record.input_tokens = input_tokens
+        if output_tokens is not None:
+            record.output_tokens = output_tokens
+        if estimated_cost_usd is not None:
+            record.estimated_cost_usd = estimated_cost_usd
         if state == ActionState.AWAITING_APPROVAL and record.drafted_at is None:
             record.drafted_at = datetime.now(timezone.utc)
         await self._session.commit()
@@ -163,7 +176,19 @@ class PendingActionRepository:
             sum(decision_durations) / len(decision_durations) if decision_durations else None
         )
 
+        total_input_tokens = sum(r.input_tokens or 0 for r in records)
+        total_output_tokens = sum(r.output_tokens or 0 for r in records)
+        total_estimated_cost_usd = sum(r.estimated_cost_usd or 0.0 for r in records)
+        costed_actions = [r for r in records if r.estimated_cost_usd is not None]
+        avg_cost_per_action = (
+            sum(r.estimated_cost_usd for r in costed_actions) / len(costed_actions) if costed_actions else None
+        )
+
         return MetricsSummary(
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            total_estimated_cost_usd=total_estimated_cost_usd,
+            avg_cost_per_action=avg_cost_per_action,
             total_actions=len(records),
             pending_count=pending_count,
             sent_count=sent_count,

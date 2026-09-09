@@ -271,6 +271,11 @@
   function formatPercent(rate) {
     return rate == null ? "—" : Math.round(rate * 100) + "%";
   }
+  function formatCurrency(usd) {
+    if (usd == null) return "—";
+    if (usd < 0.01 && usd > 0) return "<$0.01";
+    return "$" + usd.toFixed(2);
+  }
 
   function timeAgo(iso) {
     var s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -351,12 +356,14 @@
     var m = state.metrics;
     var approvedAsIs = m && m.override_rate != null ? formatPercent(1 - m.override_rate) : "—";
     var avgDraft = m ? formatDuration(m.avg_draft_seconds) : "—";
+    var totalCost = m ? formatCurrency(m.total_estimated_cost_usd) : "—";
     document.getElementById("stats").innerHTML =
       stat("Needs review", pending, pending > 0 ? "accent-num" : "", "awaiting your decision") +
       stat("Sent", sent, "", "auto-sent after approval") +
       stat("Rejected / failed", rejected, "", "handled outside the assistant, or send errors") +
       stat("Approved as-is", approvedAsIs, "", "sent without any edits") +
-      stat("Avg. time to draft", avgDraft, "", "received to ready for review");
+      stat("Avg. time to draft", avgDraft, "", "received to ready for review") +
+      stat("Est. AI cost", totalCost, "", "total spend on drafting so far");
   }
   function stat(label, value, cls, sub) {
     return '<div class="stat"><div class="stat-label">' + label + '</div><div class="stat-value ' + cls + '">' + value + '</div><div class="stat-sub">' + sub + '</div></div>';

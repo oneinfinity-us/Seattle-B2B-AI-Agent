@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
-from app.core.llm_client import LLMClient
+from app.core.llm_client import LLMClient, TokenUsage
 from app.integrations.calendar_provider import CalendarProvider
 from app.models.schemas import ActionKind, ActionState, EmailMessage
 
@@ -33,6 +33,9 @@ class ActionContext(BaseModel):
     kind: ActionKind | None = None
     state: ActionState = ActionState.RECEIVED
     draft_content: str = ""
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    estimated_cost_usd: float | None = None
 
 
 class AssistantWorkflow:
@@ -81,12 +84,17 @@ class AssistantWorkflow:
         else:
             prompt = ctx.message.body
 
+        usage = TokenUsage()
         draft_parts: list[str] = []
-        async for chunk in self._llm.stream_reply_draft(system, prompt):
+        async for chunk in self._llm.stream_reply_draft(system, prompt, usage=usage):
             draft_parts.append(chunk)
             yield ctx, chunk
 
         ctx.draft_content = "".join(draft_parts)
+        # Zero means the fallback path was used (no real completion billed), not "free" - leave it None.
+        ctx.input_tokens = usage.input_tokens or None
+        ctx.output_tokens = usage.output_tokens or None
+        ctx.estimated_cost_usd = usage.estimated_cost_usd or None
         ctx.state = ActionState.DRAFTED
         yield ctx, ""
 

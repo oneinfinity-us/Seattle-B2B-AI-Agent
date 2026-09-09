@@ -10,14 +10,27 @@ Unified entry point for LLM calls. Wraps three things:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 
 import anthropic
 import structlog
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import Settings
+from app.core.pricing import estimate_cost_usd
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class TokenUsage:
+    """A mutable sink the caller passes in to receive usage after a streamed call completes — token
+    counts are only known once the stream is fully consumed, and this can't be stored on LLMClient
+    itself since it's a shared app.state singleton that concurrent requests would race on."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
 
 
 class RetryableLLMError(Exception):
@@ -35,7 +48,9 @@ class LLMClient:
         stop=stop_after_attempt(3),
         reraise=True,
     )
-    async def _stream_primary(self, system: str, prompt: str) -> AsyncGenerator[str, None]:
+    async def _stream_primary(
+        self, system: str, prompt: str, usage: TokenUsage | None = None
+    ) -> AsyncGenerator[str, None]:
         try:
             async with self._primary.messages.stream(
                 model=self._settings.primary_model,
@@ -45,18 +60,30 @@ class LLMClient:
             ) as stream:
                 async for text in stream.text_stream:
                     yield text
+                if usage is not None:
+                    final_message = await stream.get_final_message()
+                    usage.input_tokens = final_message.usage.input_tokens
+                    usage.output_tokens = final_message.usage.output_tokens
+                    usage.estimated_cost_usd = estimate_cost_usd(
+                        self._settings.primary_model, usage.input_tokens, usage.output_tokens
+                    )
         except (anthropic.RateLimitError, anthropic.APITimeoutError, anthropic.InternalServerError) as e:
             raise RetryableLLMError(str(e)) from e
 
-    async def stream_reply_draft(self, system: str, prompt: str) -> AsyncGenerator[str, None]:
+    async def stream_reply_draft(
+        self, system: str, prompt: str, usage: TokenUsage | None = None
+    ) -> AsyncGenerator[str, None]:
         """
         The single externally exposed entry point. Tries the primary model first; if it still fails
         after multiple retries, falls back to the backup model. The fallback logic lives here rather
         than in the routing layer, so the caller (the API layer) never needs to be aware of provider
         details.
+
+        `usage`, if given, is populated with real token counts/cost — but only on a successful primary
+        call; the fallback path below never bills a real completion, so it's left at zero.
         """
         try:
-            async for chunk in self._stream_primary(system, prompt):
+            async for chunk in self._stream_primary(system, prompt, usage=usage):
                 yield chunk
             return
         except Exception:

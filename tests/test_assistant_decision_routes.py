@@ -64,6 +64,10 @@ async def test_get_metrics_returns_summary_for_the_logged_in_tenant(client, db_s
     body = response.json()
     assert body["total_actions"] == 1
     assert body["pending_count"] == 1
+    assert body["total_input_tokens"] == 0
+    assert body["total_output_tokens"] == 0
+    assert body["total_estimated_cost_usd"] == 0.0
+    assert body["avg_cost_per_action"] is None
 
 
 async def test_get_action_returns_404_when_missing(client):

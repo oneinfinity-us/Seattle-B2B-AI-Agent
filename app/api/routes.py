@@ -72,6 +72,9 @@ async def sync_inbox(payload: SyncRequest, request: Request, tenant_id: str = De
                             ctx_snapshot.action_id,
                             state=ctx_snapshot.state,
                             draft_content=ctx_snapshot.draft_content,
+                            input_tokens=ctx_snapshot.input_tokens,
+                            output_tokens=ctx_snapshot.output_tokens,
+                            estimated_cost_usd=ctx_snapshot.estimated_cost_usd,
                         )
 
                     yield {
