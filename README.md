@@ -57,6 +57,7 @@ state (see `app/db/models.py`). A merchant closes it out via
 
 ```bash
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -116,8 +117,9 @@ checklist and the exact scope-justification text.
 5. Agent state must be persisted to a database (rather than kept in in-process memory), otherwise a
    single worker restart would lose all in-progress actions — this is why `app/db/` exists rather than
    keeping `ActionContext` in memory.
-6. **No real schema migrations.** `app/db/base.py`'s `ensure_new_columns` is a stop-gap that adds
-   missing *nullable* columns to an already-provisioned database at startup (this project hit exactly
-   this: a schema change 500'd production because `create_all()` only creates brand-new tables, never
-   alters existing ones). It can't handle non-nullable columns, drops, renames, or type changes — a
-   real schema change beyond "add a nullable column" needs Alembic, not this.
+6. **Schema is managed by Alembic** (`alembic/`, `alembic upgrade head` run before the app starts — see
+   the Dockerfile). This replaced an earlier stop-gap (`ensure_new_columns`, since removed) that could
+   only add a missing *nullable* column to an already-provisioned database — added after a schema
+   change 500'd production, since `create_all()` only creates brand-new tables and never alters an
+   existing one. Adopting Alembic on the already-provisioned production database needed a one-time
+   `alembic stamp head` (done); every schema change from here on is a reviewed migration file.

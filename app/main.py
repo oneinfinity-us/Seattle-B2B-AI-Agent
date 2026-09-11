@@ -14,8 +14,7 @@ from app.core.config import get_settings
 from app.core.llm_client import LLMClient
 from app.core.rate_limiter import TenantRateLimiter
 from app.core.sessions import SessionStore
-from app.db import Base, create_engine_and_sessionmaker
-from app.db.base import ensure_new_columns
+from app.db import create_engine_and_sessionmaker
 from app.integrations import google_oauth
 from app.integrations.calendar_provider import FakeCalendarProvider
 from app.integrations.email_provider import FakeEmailProvider
@@ -48,15 +47,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
+    # Schema is Alembic's job now (`alembic upgrade head`, run before this process starts — see the
+    # Dockerfile) — this used to also run Base.metadata.create_all()/ensure_new_columns() here, which
+    # is exactly what caused a production 500 (create_all never alters an existing table).
     db_engine, db_sessionmaker = create_engine_and_sessionmaker(settings.database_url)
-    async with db_engine.begin() as conn:
-        # MVP: create tables directly rather than via Alembic migrations; revisit once the schema
-        # needs to evolve without dropping data.
-        await conn.run_sync(Base.metadata.create_all)
-    # create_all only creates brand-new tables — it never adds a column to one that already exists.
-    # This patches up an already-provisioned database (e.g. Render's Postgres) for schema changes made
-    # since it was first deployed. See ensure_new_columns' docstring for why this isn't Alembic.
-    await ensure_new_columns(db_engine, Base)
 
     app.state.settings = settings
     app.state.redis = redis
