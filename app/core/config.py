@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
 
+    # Encrypts GmailAccountCredential.refresh_token/access_token at rest (see app/core/crypto.py).
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Losing this key makes every stored credential unrecoverable — every connected merchant would need
+    # to reconnect their Google account.
+    token_encryption_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

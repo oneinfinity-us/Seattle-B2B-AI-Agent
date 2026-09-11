@@ -12,6 +12,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedText
 from app.db.base import Base
 from app.models.schemas import ActionKind, ActionState, DecisionType
 
@@ -71,9 +72,8 @@ class GmailAccountCredential(Base):
     in via the same Google grant (see app/api/auth_routes.py), tenant_id is the connected account's
     email address and this row doubles as the tenant record — there's no separate Tenant table.
 
-    KNOWN GAP (MVP, not production-ready): tokens are stored in plaintext here. Before onboarding real
-    customers this needs field-level encryption or a secrets manager (see README's "Known Design
-    Trade-offs").
+    refresh_token/access_token are encrypted at rest via EncryptedText (see app/core/crypto.py) —
+    application code still reads/writes them as plain strings.
     """
 
     __tablename__ = "gmail_account_credentials"
@@ -81,8 +81,8 @@ class GmailAccountCredential(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     connected_email_address: Mapped[str] = mapped_column(String(256))
     business_name: Mapped[str] = mapped_column(String(256), default="")
-    refresh_token: Mapped[str] = mapped_column(Text)
-    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str] = mapped_column(EncryptedText)
+    access_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scopes: Mapped[str] = mapped_column(Text)  # comma-separated
 

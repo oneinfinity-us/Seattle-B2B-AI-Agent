@@ -101,9 +101,10 @@ checklist and the exact scope-justification text.
    expired access token in-memory per request (via the stored refresh token), but don't persist the new
    token/expiry back to `GmailAccountCredential` — harmless (the refresh token still works next time)
    but means every request after expiry re-refreshes instead of reusing a cached token.
-2. **OAuth tokens are stored in plaintext** in `gmail_account_credentials`. This is fine for local
-   development but must not go to production as-is — needs field-level encryption or a secrets manager
-   before onboarding real customers.
+2. **OAuth tokens are encrypted at rest** (`app/core/crypto.py`'s `EncryptedText`, backed by Fernet) —
+   but the key itself (`TOKEN_ENCRYPTION_KEY`) just lives in an environment variable, not a real secrets
+   manager/KMS with rotation. Fine for this stage; revisit before handling a large number of customers.
+   Rotating or losing this key means every stored credential must be reconnected from scratch.
 3. **Calendar is read-only in v1.** The assistant reads free/busy to draft smarter scheduling replies,
    but never creates or books calendar events itself — a human always sends the proposal and the actual
    booking happens as a normal reply/accept over email.

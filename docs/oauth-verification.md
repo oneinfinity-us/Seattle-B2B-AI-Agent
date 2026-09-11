@@ -41,9 +41,10 @@ in Google Cloud Console — nothing here runs automatically.
 > request can propose real open times, rather than asking the customer to guess. We never create,
 > modify, or delete calendar events.
 
-## Known dependency
+## Known dependency (resolved)
 
 Google's review for restricted scopes (the Gmail ones) checks that stated data-handling practices match
-reality. `GmailAccountCredential.refresh_token`/`access_token` are currently stored in plaintext (see
-README's "Known Design Trade-offs") — this should be encrypted at rest before or shortly after
-submission, since the Privacy Policy already commits to working toward it.
+reality. `GmailAccountCredential.refresh_token`/`access_token` are now encrypted at rest
+(`app/core/crypto.py`), matching what the Privacy Policy states — see README's "Known Design
+Trade-offs" for the remaining caveat (the encryption key itself isn't yet in a real secrets
+manager/KMS).

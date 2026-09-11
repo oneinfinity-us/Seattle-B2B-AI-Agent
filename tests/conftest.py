@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import os
+
+# Set before any app module import that might construct Settings — EncryptedText (used by
+# GmailAccountCredential) needs a valid key to encrypt/decrypt in tests. Not a production secret.
+os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "euetz15u41knY-OqdlCsLI0yBhGfjZLkAojsdSUAI8E=")
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
