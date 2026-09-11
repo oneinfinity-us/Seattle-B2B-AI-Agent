@@ -27,6 +27,20 @@ def create_engine_and_sessionmaker(database_url: str) -> tuple[AsyncEngine, asyn
     return engine, sessionmaker
 
 
+def sync_database_url(database_url: str) -> str:
+    """Alembic (alembic/env.py) runs migrations with a plain sync engine, not the app's async one --
+    asyncpg has no sync interface, so this swaps it for psycopg2 (SQLite's stdlib driver needs no swap
+    at all). The opposite direction of _normalize_database_url."""
+    for async_prefix, sync_prefix in (
+        ("postgresql+asyncpg://", "postgresql+psycopg2://"),
+        ("postgres://", "postgresql+psycopg2://"),
+        ("sqlite+aiosqlite://", "sqlite://"),
+    ):
+        if database_url.startswith(async_prefix):
+            return sync_prefix + database_url[len(async_prefix) :]
+    return database_url
+
+
 async def ensure_new_columns(engine: AsyncEngine, base: type[DeclarativeBase]) -> None:
     """
     MVP stop-gap, not a substitute for real migrations (Alembic): `Base.metadata.create_all()` only
