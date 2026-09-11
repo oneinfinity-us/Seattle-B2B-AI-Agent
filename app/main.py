@@ -79,3 +79,13 @@ async def healthz():
 @app.get("/")
 async def index():
     return FileResponse("app/static/index.html")
+
+
+@app.get("/privacy")
+async def privacy():
+    return FileResponse("app/static/privacy.html")
+
+
+@app.get("/terms")
+async def terms():
+    return FileResponse("app/static/terms.html")

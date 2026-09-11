@@ -88,6 +88,13 @@ python -m eval.run_eval
 Requires `ANTHROPIC_API_KEY` (real spend — cheap at this dataset size). Prints a summary and writes a
 timestamped JSON report to `eval/results/` (gitignored).
 
+## Legal Pages
+
+`/privacy` and `/terms` are live pages required for real accounts to log in at all — the Gmail/Calendar
+scopes requested at login mean the app must pass Google's OAuth verification, which requires published
+policies at those URLs. See [docs/oauth-verification.md](docs/oauth-verification.md) for the submission
+checklist and the exact scope-justification text.
+
 ## Known Design Trade-offs
 
 1. **Refreshed access tokens aren't written back.** `GmailProvider`/`GoogleCalendarProvider` refresh an
