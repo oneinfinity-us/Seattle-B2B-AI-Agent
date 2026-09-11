@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
+import httpx
 import structlog
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     """
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    http_client = httpx.AsyncClient(timeout=10.0)
 
     # Schema is Alembic's job now (`alembic upgrade head`, run before this process starts — see the
     # Dockerfile) — this used to also run Base.metadata.create_all()/ensure_new_columns() here, which
@@ -60,7 +62,10 @@ async def lifespan(app: FastAPI):
         redis, capacity=settings.rate_limit_capacity, refill_per_sec=settings.rate_limit_refill_per_sec
     )
     app.state.llm_client = LLMClient(settings)
-    app.state.notifier = NotificationService(redis)
+    app.state.http_client = http_client
+    app.state.notifier = NotificationService(
+        redis, http_client, settings.sendgrid_api_key, settings.notification_from_email
+    )
     app.state.sessions = SessionStore(redis, settings.session_ttl_seconds)
     app.state.oauth_exchange = google_oauth.exchange_code
 
@@ -82,6 +87,7 @@ async def lifespan(app: FastAPI):
 
     await redis.aclose()
     await db_engine.dispose()
+    await http_client.aclose()
 
 
 app = FastAPI(title="Seattle B2B AI Assistant", lifespan=lifespan)

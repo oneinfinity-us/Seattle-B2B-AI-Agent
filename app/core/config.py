@@ -46,8 +46,10 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 60 * 60 * 24 * 30
     session_cookie_secure: bool = False
 
-    # Notification channels
+    # Notification channels. SendGrid requires notification_from_email to be a verified sender (Single
+    # Sender Verification or a fully authenticated domain) in that SendGrid account, or sends 403.
     sendgrid_api_key: str = ""
+    notification_from_email: str = "notifications@example.com"
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
 

@@ -123,3 +123,8 @@ checklist and the exact scope-justification text.
    change 500'd production, since `create_all()` only creates brand-new tables and never alters an
    existing one. Adopting Alembic on the already-provisioned production database needed a one-time
    `alembic stamp head` (done); every schema change from here on is a reviewed migration file.
+7. **Notifications are email-only.** `NotificationService` (`app/services/notifier.py`) sends real
+   email via SendGrid, but SMS (`NotifyChannel.SMS`) isn't implemented — `twilio_account_sid`/
+   `twilio_auth_token` are declared in `Settings` but unused. `SENDGRID_API_KEY` must belong to an
+   account with `NOTIFICATION_FROM_EMAIL` set up as a verified sender (Single Sender Verification or a
+   fully authenticated domain) — otherwise every send 403s.
