@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     rate_limit_capacity: int = 30
     rate_limit_refill_per_sec: float = 0.5
 
+    # How often the background loop (app/services/sync_service.py) checks every onboarded tenant's
+    # inbox, in seconds. Runs in-process -- fine at single-instance scale, see README.
+    sync_interval_seconds: int = 60 * 60
+
     # Google OAuth: this is now also how a merchant logs in (see app/api/auth_routes.py) — one
     # "Continue with Google" grant both authenticates them and captures the refresh token their
     # GmailAccountCredential needs for Gmail/Calendar access.

@@ -51,3 +51,8 @@ class CredentialRepository:
 
     async def get(self, tenant_id: str) -> GmailAccountCredential | None:
         return await self._session.get(GmailAccountCredential, tenant_id)
+
+    async def list_all_tenant_ids(self) -> list[str]:
+        """Every onboarded tenant — used to drive the background sync loop over all of them."""
+        result = await self._session.scalars(select(GmailAccountCredential.tenant_id))
+        return list(result.all())

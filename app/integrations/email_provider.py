@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from typing import Protocol
 
@@ -72,7 +72,9 @@ class GmailProvider:
                     sender=headers.get("From", ""),
                     subject=headers.get("Subject", ""),
                     body=_extract_plain_text_body(full["payload"]),
-                    received_at=datetime.fromtimestamp(int(full["internalDate"]) / 1000),
+                    # internalDate is a Unix ms timestamp (UTC); fromtimestamp() alone would silently
+                    # mislabel it as naive local server time.
+                    received_at=datetime.fromtimestamp(int(full["internalDate"]) / 1000, tz=timezone.utc),
                     is_bulk_mail="List-Unsubscribe" in headers,
                     is_automated=headers.get("Auto-Submitted", "no").lower() != "no",
                 )

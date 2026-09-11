@@ -13,11 +13,10 @@ from app.integrations.provider_factory import build_providers_for_tenant
 from app.models.schemas import (
     ActionDecisionRequest,
     MetricsSummary,
-    NotificationRequest,
-    NotifyChannel,
     PendingActionResponse,
     SyncRequest,
 )
+from app.services.sync_service import send_digest_notification
 
 router = APIRouter()
 
@@ -92,17 +91,8 @@ async def sync_inbox(payload: SyncRequest, request: Request, tenant_id: str = De
                 if persisted:
                     actions_created += 1
 
-        if actions_created and payload.auto_notify_manager:
-            await app_state.notifier.send(
-                NotificationRequest(
-                    tenant_id=tenant_id,
-                    channel=NotifyChannel.EMAIL,
-                    recipient="owner@example.com",
-                    subject=f"{actions_created} item(s) awaiting your review",
-                    body="Log in to review AI-drafted replies awaiting your approval.",
-                    idempotency_key=f"{tenant_id}:{datetime.now(timezone.utc).date()}:digest",
-                )
-            )
+        if payload.auto_notify_manager:
+            await send_digest_notification(app_state, tenant_id, actions_created)
 
         yield {"event": "done", "data": json.dumps({"actions_created": actions_created})}
 

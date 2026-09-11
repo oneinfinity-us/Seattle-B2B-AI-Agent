@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from redis.asyncio import Redis
@@ -18,6 +20,21 @@ from app.integrations import google_oauth
 from app.integrations.calendar_provider import FakeCalendarProvider
 from app.integrations.email_provider import FakeEmailProvider
 from app.services.notifier import NotificationService
+from app.services.sync_service import sync_all_tenants
+
+logger = structlog.get_logger()
+
+
+async def _sync_loop(app_state, interval_seconds: float) -> None:
+    """Runs sync_all_tenants forever on an interval. This is in-process and per-instance -- fine at
+    the current single-instance scale, but if this ever runs on more than one instance, each one will
+    duplicate-process every tenant (see README's "Known Design Trade-offs")."""
+    while True:
+        try:
+            await sync_all_tenants(app_state)
+        except Exception:  # noqa: BLE001 - a bad tick must not kill the loop
+            logger.exception("scheduled_sync_loop_tick_failed")
+        await asyncio.sleep(interval_seconds)
 
 
 @asynccontextmanager
@@ -53,14 +70,21 @@ async def lifespan(app: FastAPI):
     app.state.sessions = SessionStore(redis, settings.session_ttl_seconds)
     app.state.oauth_exchange = google_oauth.exchange_code
 
-    # Login now provisions a real GmailAccountCredential per tenant (app/api/auth_routes.py), but the
-    # email/calendar actions used by the sync/draft pipeline still share one in-memory fake provider.
-    # Swap this for a per-tenant GmailProvider/GoogleCalendarProvider lookup (built from that tenant's
-    # credential row) to make the assistant act on the real connected inbox.
+    # Shared fallback only — a logged-in tenant's real GmailProvider/GoogleCalendarProvider are built
+    # per-request from their GmailAccountCredential (see app/integrations/provider_factory.py). This
+    # pair only gets used for a tenant with no credential on file, which shouldn't happen in practice.
     app.state.email_provider = FakeEmailProvider()
     app.state.calendar_provider = FakeCalendarProvider()
 
+    sync_task = asyncio.create_task(_sync_loop(app.state, settings.sync_interval_seconds))
+
     yield
+
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
 
     await redis.aclose()
     await db_engine.dispose()

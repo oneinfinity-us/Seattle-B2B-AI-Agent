@@ -108,9 +108,11 @@ checklist and the exact scope-justification text.
 3. **Calendar is read-only in v1.** The assistant reads free/busy to draft smarter scheduling replies,
    but never creates or books calendar events itself — a human always sends the proposal and the actual
    booking happens as a normal reply/accept over email.
-4. **Sync is manually triggered**, not scheduled. `POST /api/v1/assistant/sync` stands in for "checks
-   email daily" — wiring a cron/scheduler to call it on an interval is a deployment concern, not
-   something this service does for itself yet.
+4. **The background sync loop is in-process and per-instance** (`app/services/sync_service.py`,
+   started in `app/main.py`'s lifespan on an interval — `SYNC_INTERVAL_SECONDS`, default hourly). Fine
+   at the current single-instance deployment; if this ever scales to more than one instance, each one
+   runs its own loop and duplicate-processes every tenant. `POST /api/v1/assistant/sync` (the "Check
+   inbox now" button) still exists separately for the on-demand, live-streaming UX.
 5. Agent state must be persisted to a database (rather than kept in in-process memory), otherwise a
    single worker restart would lose all in-progress actions — this is why `app/db/` exists rather than
    keeping `ActionContext` in memory.
