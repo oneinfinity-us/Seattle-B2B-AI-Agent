@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import sentry_sdk
 import structlog
 
 from app.agents.assistant_agent import ActionContext, AssistantWorkflow
@@ -104,4 +105,5 @@ async def sync_all_tenants(app_state: Any) -> None:
             created = await sync_tenant_inbox(app_state, tenant_id)
             logger.info("scheduled_sync_completed", tenant_id=tenant_id, actions_created=created)
         except Exception:  # noqa: BLE001 - one tenant's failure (e.g. a revoked Google grant) must not stop the rest
+            sentry_sdk.capture_exception()
             logger.exception("scheduled_sync_failed", tenant_id=tenant_id)

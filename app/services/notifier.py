@@ -16,6 +16,7 @@ Why:
 from __future__ import annotations
 
 import httpx
+import sentry_sdk
 import structlog
 from redis.asyncio import Redis
 
@@ -24,6 +25,12 @@ from app.models.schemas import NotificationRequest, NotifyChannel
 logger = structlog.get_logger()
 
 _SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send"
+
+
+class NotificationNotConfiguredError(Exception):
+    """Raised when the requested channel has no working credentials yet (e.g. SendGrid isn't set up,
+    or SMS isn't implemented). Deliberately not reported to Sentry -- it's a known, expected state
+    until the channel is configured, not an anomaly worth paging anyone for."""
 
 
 class NotificationService:
@@ -43,8 +50,13 @@ class NotificationService:
 
         try:
             await self._deliver(request)
+        except NotificationNotConfiguredError as exc:
+            await self._redis.delete(idempotency_key)
+            logger.warning("notification_not_configured", reason=str(exc), recipient=request.recipient)
+            return False
         except Exception:
             await self._redis.delete(idempotency_key)  # let a future retry actually attempt delivery
+            sentry_sdk.capture_exception()
             logger.exception("notification_send_failed", recipient=request.recipient, tenant=request.tenant_id)
             return False
 
@@ -53,9 +65,9 @@ class NotificationService:
 
     async def _deliver(self, request: NotificationRequest) -> None:
         if request.channel != NotifyChannel.EMAIL:
-            raise NotImplementedError(f"{request.channel} notifications aren't implemented yet")
+            raise NotificationNotConfiguredError(f"{request.channel} notifications aren't implemented yet")
         if not self._sendgrid_api_key:
-            raise RuntimeError("SENDGRID_API_KEY is not configured")
+            raise NotificationNotConfiguredError("SENDGRID_API_KEY is not configured")
 
         response = await self._http.post(
             _SENDGRID_URL,

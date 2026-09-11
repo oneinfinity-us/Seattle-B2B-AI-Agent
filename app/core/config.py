@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # to reconnect their Google account.
     token_encryption_key: str = ""
 
+    # Error tracking (app/main.py). Unhandled request exceptions are captured automatically once this
+    # is set; background-task failures (the sync loop, notification delivery) call
+    # sentry_sdk.capture_exception() explicitly at their existing try/except sites — see those call
+    # sites for why. Safe to leave unset: every capture call is a no-op until sentry_sdk.init() runs.
+    sentry_dsn: str = ""
+    environment: str = "development"
+
 
 @lru_cache
 def get_settings() -> Settings:

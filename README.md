@@ -96,6 +96,23 @@ scopes requested at login mean the app must pass Google's OAuth verification, wh
 policies at those URLs. See [docs/oauth-verification.md](docs/oauth-verification.md) for the submission
 checklist and the exact scope-justification text.
 
+## Monitoring
+
+Two separate concerns, solved two separate ways:
+
+- **"Is the service even up?"** has to be answered from *outside* the app — if the whole process is
+  down, nothing running inside it can report that. Point an external uptime checker (e.g. UptimeRobot,
+  Better Stack) at `GET /healthz` on an interval; that's not something this codebase can do for itself.
+- **"Did something break?"** is [Sentry](https://sentry.io) (`app/main.py`), set via `SENTRY_DSN` (and
+  `ENVIRONMENT=production` on the real deployment). Unhandled request exceptions (real 500s) are
+  captured automatically. Background-task failures — the sync loop
+  (`app/services/sync_service.py`/`app/main.py`'s `_sync_loop`) and a genuine notification delivery
+  failure (`app/services/notifier.py`) — aren't HTTP requests, so nothing auto-captures them; those call
+  `sentry_sdk.capture_exception()` explicitly at their own try/except sites. `SendGrid not configured`
+  and `SMS not implemented` are deliberately *not* reported — they're an already-known, expected state
+  until those are set up, not an anomaly worth paging anyone for. Leaving `SENTRY_DSN` unset is safe:
+  every capture call is a no-op until `sentry_sdk.init()` has actually run.
+
 ## Known Design Trade-offs
 
 1. **Refreshed access tokens aren't written back.** `GmailProvider`/`GoogleCalendarProvider` refresh an

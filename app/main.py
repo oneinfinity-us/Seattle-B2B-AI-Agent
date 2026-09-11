@@ -4,10 +4,13 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
+import sentry_sdk
 import structlog
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from redis.asyncio import Redis
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from app.api.auth_routes import router as auth_router
 from app.api.routes import router
@@ -24,6 +27,19 @@ from app.services.sync_service import sync_all_tenants
 
 logger = structlog.get_logger()
 
+_settings = get_settings()
+if _settings.sentry_dsn:
+    # Captures unhandled request exceptions (real 500s) automatically via the integrations below.
+    # Background-task failures (the sync loop, notification delivery) aren't HTTP requests, so nothing
+    # here sees them -- those call sentry_sdk.capture_exception() explicitly at their own try/except
+    # sites instead (see _sync_loop below, sync_service.sync_all_tenants, notifier.NotificationService).
+    sentry_sdk.init(
+        dsn=_settings.sentry_dsn,
+        environment=_settings.environment,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        traces_sample_rate=0.0,  # error tracking only for now, not performance tracing
+    )
+
 
 async def _sync_loop(app_state, interval_seconds: float) -> None:
     """Runs sync_all_tenants forever on an interval. This is in-process and per-instance -- fine at
@@ -33,6 +49,7 @@ async def _sync_loop(app_state, interval_seconds: float) -> None:
         try:
             await sync_all_tenants(app_state)
         except Exception:  # noqa: BLE001 - a bad tick must not kill the loop
+            sentry_sdk.capture_exception()
             logger.exception("scheduled_sync_loop_tick_failed")
         await asyncio.sleep(interval_seconds)
 

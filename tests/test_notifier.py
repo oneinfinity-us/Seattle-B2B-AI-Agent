@@ -4,6 +4,7 @@ import json
 
 import fakeredis
 import httpx
+import sentry_sdk
 
 from app.models.schemas import NotificationRequest, NotifyChannel
 from app.services.notifier import NotificationService
@@ -93,7 +94,10 @@ async def test_sendgrid_failure_releases_the_idempotency_key_for_a_retry():
         await http_client.aclose()
 
 
-async def test_send_fails_without_crashing_when_sendgrid_api_key_missing():
+async def test_send_fails_without_crashing_when_sendgrid_api_key_missing(monkeypatch):
+    captures = []
+    monkeypatch.setattr(sentry_sdk, "capture_exception", lambda *a, **k: captures.append(1))
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("should never call SendGrid without an API key")
 
@@ -104,9 +108,14 @@ async def test_send_fails_without_crashing_when_sendgrid_api_key_missing():
         await http_client.aclose()
 
     assert result is False
+    # Not configuring SendGrid yet is a known, expected state -- not something to page anyone for.
+    assert captures == []
 
 
-async def test_sms_channel_is_not_yet_implemented():
+async def test_sms_channel_is_not_yet_implemented(monkeypatch):
+    captures = []
+    monkeypatch.setattr(sentry_sdk, "capture_exception", lambda *a, **k: captures.append(1))
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("SMS should never reach an HTTP call yet")
 
@@ -117,3 +126,22 @@ async def test_sms_channel_is_not_yet_implemented():
         await http_client.aclose()
 
     assert result is False
+    assert captures == []
+
+
+async def test_a_genuine_delivery_failure_is_reported_to_sentry(monkeypatch):
+    captures = []
+    monkeypatch.setattr(sentry_sdk, "capture_exception", lambda *a, **k: captures.append(1))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    service, _redis, http_client = _make_service(handler)
+    try:
+        result = await service.send(_make_request())
+    finally:
+        await http_client.aclose()
+
+    assert result is False
+    # Unlike "not configured yet", an actual SendGrid failure is worth knowing about.
+    assert captures == [1]

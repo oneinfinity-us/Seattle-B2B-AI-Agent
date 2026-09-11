@@ -135,7 +135,10 @@ async def test_sync_all_tenants_continues_after_one_tenant_fails(db_sessionmaker
         return 3
 
     monkeypatch.setattr(sync_service, "sync_tenant_inbox", fake_sync_tenant_inbox)
+    captures = []
+    monkeypatch.setattr(sync_service.sentry_sdk, "capture_exception", lambda *a, **k: captures.append(1))
 
     await sync_service.sync_all_tenants(SimpleNamespace(db_sessionmaker=db_sessionmaker))
 
     assert set(calls) == {"tenant-a@example.com", "tenant-b@example.com"}
+    assert captures == [1]  # exactly the one tenant that actually failed
